@@ -39,4 +39,4 @@ if __name__ == '__main__':
         solution = solve_equation(equation)
         print(solution)
     except:
-        print("Esta não é uma operação válida!", file=sys.stderr)
+        raise Exception("Not a valid equation.")
