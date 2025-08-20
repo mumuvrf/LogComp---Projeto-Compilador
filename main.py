@@ -1,42 +1,74 @@
 import sys
 
-def solve_equation(equation: str):
-    symbols = ['+', '-']
-    result = 0
-    number = ""
-    sum = 1
-    sub = 0
-    for char in equation:
-        if char in symbols:
-            if sum:
-                result += int(number)
-                sum = 0
-            elif sub:
-                result -= int(number)
-                sub = 0
+class Token:
+    def __init__(self, kind: str, value: int | str):
+        self.kind = kind
+        self.value = value
 
-            if char == '+':
-                sum = 1
-            elif char == '-':
-                sub = 1
+class Lexer:
+    def __init__(self, source: str):
+        self.source = source
+        self.position = 0
+        self.next = -1
 
+    def selectNext(self):
+        if(self.position == len(self.source)):
+            self.next = Token('EOF', '')
+            return
+        char = self.source[self.position]
+        while char == ' ' and self.position < len(self.source):
+            self.position += 1
+            char = self.source[self.position]
+        if(char == '+'):
+            self.next = Token('PLUS', '+')
+            self.position += 1
+        elif(char == '-'):
+            self.next = Token('MINUS', '-')
+            self.position += 1
+        elif(char.isdigit()):
             number = ""
+            while(char.isdigit()):
+                number += char
+                self.position += 1
+                if(self.position == len(self.source)):
+                    break
+                else:
+                    char = self.source[self.position]
+            self.next = Token('INT', int(number))
         else:
-            number += char
+            raise Exception(f"Invalid character found at position {self.position}.")
 
-    if sum:
-        result += int(number)
-        sum = 0
-    elif sub:
-        result -= int(number)
-        sub = 0
+class Parser:
+    def __init__(self):
+        self.lex : Lexer
 
-    return result
+    def parseExpression(self):
+        self.lex.selectNext()
+        if(self.lex.next.kind != 'INT'):
+            raise Exception('Syntax Error: Expression must start with an Integer.')
+        else:
+            resultado = self.lex.next.value
+            self.lex.selectNext()
+            if(self.lex.next.kind == 'INT'):
+                raise Exception('Syntax Error: There must be an operation between two numbers.')
+            while((self.lex.next.kind == 'PLUS' or self.lex.next.kind == 'MINUS') and self.lex.next.kind != 'EOF'):
+                operation = self.lex.next.kind
+                self.lex.selectNext()
+                if(self.lex.next.kind != 'INT'):
+                    raise Exception('Syntax Error: Number not found after operation signal.')
+                else:
+                    if(operation == 'MINUS'):
+                        resultado -= self.lex.next.value
+                    elif(operation == 'PLUS'):
+                        resultado += self.lex.next.value
+                self.lex.selectNext()
+            return resultado
+
+    def run(self, code: str):
+        self.lex = Lexer(code)
+        resultado = self.parseExpression()
+        print(resultado)
 
 if __name__ == '__main__':
-    equation = sys.argv[1]
-    try:
-        solution = solve_equation(equation)
-        print(solution)
-    except:
-        raise Exception("Not a valid equation.")
+    parser = Parser()
+    parser.run(sys.argv[1])
