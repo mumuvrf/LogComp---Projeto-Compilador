@@ -18,7 +18,11 @@ class Lexer:
         char = self.source[self.position]
         while char == ' ' and self.position < len(self.source):
             self.position += 1
-            char = self.source[self.position]
+            if(self.position < len(self.source)):
+                char = self.source[self.position]
+            else:
+                self.next = Token('EOF', '')
+                return
         if(char == '+'):
             self.next = Token('PLUS', '+')
             self.position += 1
