@@ -71,7 +71,7 @@ class Parser:
                     raise Exception('Syntax Error: CLOSE_PAR Token not found.')
                 else:
                     return resultado
-            elif(self.lex.next.kind == 'EOF'):
+            else:
                 raise Exception('Syntax Error: Number not found after operation signal.')
 
 
