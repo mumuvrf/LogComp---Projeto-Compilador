@@ -23,13 +23,7 @@ class Lexer:
             else:
                 self.next = Token('EOF', '')
                 return
-        if(char == '+'):
-            self.next = Token('PLUS', '+')
-            self.position += 1
-        elif(char == '-'):
-            self.next = Token('MINUS', '-')
-            self.position += 1
-        elif(char.isdigit()):
+        if(char.isdigit()):
             number = ""
             while(char.isdigit()):
                 number += char
@@ -40,39 +34,91 @@ class Lexer:
                     char = self.source[self.position]
             self.next = Token('INT', int(number))
         else:
-            raise Exception(f"Invalid character found at position {self.position}.")
+            if(char == '+'):
+                self.next = Token('PLUS', '+')
+            elif(char == '-'):
+                self.next = Token('MINUS', '-')
+            elif(char == '*'):
+                self.next = Token('MULT', '*')
+            elif(char == '/'):
+                self.next = Token('DIV', '/')
+            elif(char == '('):
+                self.next = Token('OPEN_PAR', '(')
+            elif(char == ')'):
+                self.next = Token('CLOSE_PAR', ')')
+            else:
+                raise Exception(f"Invalid character found at position {self.position}.")
+            self.position += 1
 
 class Parser:
     def __init__(self):
         self.lex : Lexer
 
-    def parseExpression(self):
-        self.lex.selectNext()
-        if(self.lex.next.kind != 'INT'):
-            raise Exception('Syntax Error: Expression must start with an Integer.')
+    def parseFactor(self):
+        if(self.lex.next.kind == 'INT'):
+            return self.lex.next.value
         else:
-            resultado = self.lex.next.value
-            self.lex.selectNext()
-            if(self.lex.next.kind == 'INT'):
-                raise Exception('Syntax Error: There must be an operation between two numbers.')
-            while((self.lex.next.kind == 'PLUS' or self.lex.next.kind == 'MINUS') and self.lex.next.kind != 'EOF'):
-                operation = self.lex.next.kind
+            if(self.lex.next.kind == 'PLUS'):
                 self.lex.selectNext()
-                if(self.lex.next.kind != 'INT'):
-                    raise Exception('Syntax Error: Number not found after operation signal.')
+                return self.parseFactor()
+            elif(self.lex.next.kind == 'MINUS'):
+                self.lex.selectNext()
+                return -self.parseFactor()
+            elif(self.lex.next.kind == 'OPEN_PAR'):
+                self.lex.selectNext()
+                resultado = self.parseExpression()
+                if(self.lex.next.kind != 'CLOSE_PAR'):
+                    raise Exception('Syntax Error: CLOSE_PAR Token not found.')
                 else:
-                    if(operation == 'MINUS'):
-                        resultado -= self.lex.next.value
-                    elif(operation == 'PLUS'):
-                        resultado += self.lex.next.value
+                    return resultado
+            elif(self.lex.next.kind == 'EOF'):
+                raise Exception('Syntax Error: Number not found after operation signal.')
+
+
+    def parseTerm(self):
+        resultado = self.parseFactor()
+        self.lex.selectNext()
+        if(self.lex.next.kind == 'INT'):
+            raise Exception('Syntax Error: There must be an operation between two numbers.')
+        while((self.lex.next.kind == 'MULT') or (self.lex.next.kind == 'DIV')):
+            operation = self.lex.next.kind
+            self.lex.selectNext()
+            if(self.lex.next.kind == 'MULT' or self.lex.next.kind == 'DIV'):
+                raise Exception('Syntax Error: Invalid operation.')
+            else:
+                if(operation == 'MULT'):
+                    resultado *= self.parseFactor()
+                elif(operation == 'DIV'):
+                    resultado //= self.parseFactor()
                 self.lex.selectNext()
-            return resultado
+        return resultado
+
+    def parseExpression(self):
+        resultado = self.parseTerm()
+        if(self.lex.next.kind == 'INT'):
+            raise Exception('Syntax Error: There must be an operation between two numbers.')
+        while((self.lex.next.kind == 'PLUS' or self.lex.next.kind == 'MINUS')):
+            operation = self.lex.next.kind
+            self.lex.selectNext()
+            if(operation == 'MINUS'):
+                resultado -= self.parseTerm()
+            elif(operation == 'PLUS'):
+                resultado += self.parseTerm()
+        return resultado
 
     def run(self, code: str):
         self.lex = Lexer(code)
+        self.lex.selectNext()
+        if(self.lex.next.kind == 'EOF'):
+            raise Exception('Syntax Error: Empty expression.')
         resultado = self.parseExpression()
+        if(self.lex.next.kind == 'CLOSE_PAR'):
+            raise Exception('Syntax Error: CLOSE_PAR Token found without previous OPEN_PAR Token.')
         print(resultado)
 
 if __name__ == '__main__':
     parser = Parser()
-    parser.run(sys.argv[1])
+    if(len(sys.argv) == 1):
+        raise Exception('Syntax Error: Empty expression.')
+    else:
+        parser.run(sys.argv[1])
