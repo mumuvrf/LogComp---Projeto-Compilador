@@ -5,4 +5,4 @@
 
 # Diagrama Sintático
 
-![](img/diagrama_sintatico.svg)
+![](img/diagrama_expandido.png)
