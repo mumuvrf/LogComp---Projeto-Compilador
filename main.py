@@ -22,24 +22,24 @@ class UnOp(Node):
         super().__init__(value, [child])
 
     def evaluate(self):
-        if(self.value == '+'):
+        if(self.value == 'PLUS'):
             return self.children[0].evaluate()
-        elif(self.value == '-'):
+        elif(self.value == 'MINUS'):
             return -self.children[0].evaluate()
     
 class BinOp(Node):
-    def __init__(self, value: int | str, children: list[Node]):
-        super().__init__(value, children)
+    def __init__(self, value: int | str, left: Node, right: Node):
+        super().__init__(value, [left, right])
 
     def evaluate(self):
-        if(self.value == '+'):
+        if(self.value == 'PLUS'):
             return self.children[0].evaluate() + self.children[1].evaluate()
-        elif(self.value == '-'):
+        elif(self.value == 'MINUS'):
             return self.children[0].evaluate() - self.children[1].evaluate()
-        elif(self.value == '*'):
+        elif(self.value == 'MULT'):
             return self.children[0].evaluate() * self.children[1].evaluate()  
-        elif(self.value == '/'):
-            return self.children[0].evaluate() / self.children[1].evaluate()
+        elif(self.value == 'DIV'):
+            return self.children[0].evaluate() // self.children[1].evaluate()
 
 class Token:
     def __init__(self, kind: str, value: int | str):
@@ -93,69 +93,56 @@ class Lexer:
 
 class Parser:
     def __init__(self):
-        self.lex : Lexer
+        self.lex: Lexer
 
     def parseFactor(self):
-        if(self.lex.next.kind == 'INT'):
-            return self.lex.next.value
+        if self.lex.next.kind == "INT":
+            node = IntVal(self.lex.next.value)
+            self.lex.selectNext()
+            return node
+        elif self.lex.next.kind in ("PLUS", "MINUS"):
+            operation = self.lex.next.kind
+            self.lex.selectNext()
+            return UnOp(operation, self.parseFactor())
+        elif self.lex.next.kind == "OPEN_PAR":
+            self.lex.selectNext()
+            node = self.parseExpression()
+            if self.lex.next.kind != "CLOSE_PAR":
+                raise Exception("Syntax Error: ')' expected")
+            self.lex.selectNext()
+            return node
         else:
-            if(self.lex.next.kind == 'PLUS'):
-                self.lex.selectNext()
-                return self.parseFactor()
-            elif(self.lex.next.kind == 'MINUS'):
-                self.lex.selectNext()
-                return -self.parseFactor()
-            elif(self.lex.next.kind == 'OPEN_PAR'):
-                self.lex.selectNext()
-                resultado = self.parseExpression()
-                if(self.lex.next.kind != 'CLOSE_PAR'):
-                    raise Exception('Syntax Error: CLOSE_PAR Token not found.')
-                else:
-                    return resultado
-            else:
-                raise Exception('Syntax Error: Number not found after operation signal.')
-
+            raise Exception("Syntax Error: invalid factor")
 
     def parseTerm(self):
-        resultado = self.parseFactor()
-        self.lex.selectNext()
+        node = self.parseFactor()
         if(self.lex.next.kind == 'INT'):
             raise Exception('Syntax Error: There must be an operation between two numbers.')
-        while((self.lex.next.kind == 'MULT') or (self.lex.next.kind == 'DIV')):
+        while self.lex.next.kind in ("MULT", "DIV"):
             operation = self.lex.next.kind
             self.lex.selectNext()
-            if(self.lex.next.kind == 'MULT' or self.lex.next.kind == 'DIV'):
-                raise Exception('Syntax Error: Invalid operation.')
-            else:
-                if(operation == 'MULT'):
-                    resultado *= self.parseFactor()
-                elif(operation == 'DIV'):
-                    resultado //= self.parseFactor()
-                self.lex.selectNext()
-        return resultado
+            right = self.parseFactor()
+            node = BinOp(operation, node, right)
+        return node
 
     def parseExpression(self):
-        resultado = self.parseTerm()
-        if(self.lex.next.kind == 'INT'):
-            raise Exception('Syntax Error: There must be an operation between two numbers.')
-        while((self.lex.next.kind == 'PLUS' or self.lex.next.kind == 'MINUS')):
+        node = self.parseTerm()
+        while self.lex.next.kind in ("PLUS", "MINUS"):
             operation = self.lex.next.kind
             self.lex.selectNext()
-            if(operation == 'MINUS'):
-                resultado -= self.parseTerm()
-            elif(operation == 'PLUS'):
-                resultado += self.parseTerm()
-        return resultado
+            right = self.parseTerm()
+            node = BinOp(operation, node, right)
+        return node
 
     def run(self, code: str):
         self.lex = Lexer(code)
         self.lex.selectNext()
-        if(self.lex.next.kind == 'EOF'):
-            raise Exception('Syntax Error: Empty expression.')
-        resultado = self.parseExpression()
-        if(self.lex.next.kind == 'CLOSE_PAR'):
-            raise Exception('Syntax Error: CLOSE_PAR Token found without previous OPEN_PAR Token.')
-        print(resultado)
+        if self.lex.next.kind == "EOF":
+            raise Exception("Syntax Error: empty expression")
+        root = self.parseExpression()
+        if self.lex.next.kind != "EOF":
+            raise Exception("Syntax Error: unexpected token after expression")
+        print(root.evaluate())
 
 if __name__ == '__main__':
     parser = Parser()
