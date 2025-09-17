@@ -1,5 +1,29 @@
 import sys
+import re
 from abc import ABC, abstractmethod
+
+class Prepro:
+    def filter(self, code):
+        filtered_code = re.sub(r"//.*", "", code)
+        return filtered_code
+
+class SymbolTable:
+    def __init__(self):
+        self.table = {}
+
+    def getTableValue(self, name: str):
+        if name in self.table.keys():
+            return self.table[name].value
+        else:
+            raise Exception('Syntax error: Invalid variable name.')
+    
+    def setTableValue(self, name: str, value: int):
+        self.table[name] = Variable(value)
+        pass
+
+class Variable:
+    def __init__(self, value: int):
+        self.value = value
 
 class Node(ABC):
     def __init__(self, value: int | str, children):
@@ -7,39 +31,78 @@ class Node(ABC):
         self.children = children
 
     @abstractmethod
-    def evaluate(self):
+    def evaluate(self, st: SymbolTable):
         pass
 
 class IntVal(Node):
     def __init__(self, value: int | str):
         super().__init__(value, [])
 
-    def evaluate(self):
+    def evaluate(self, st: SymbolTable):
         return self.value
     
 class UnOp(Node):
     def __init__(self, value: int | str, child: Node):
         super().__init__(value, [child])
 
-    def evaluate(self):
+    def evaluate(self, st: SymbolTable):
         if(self.value == 'PLUS'):
-            return self.children[0].evaluate()
+            return self.children[0].evaluate(st)
         elif(self.value == 'MINUS'):
-            return -self.children[0].evaluate()
+            return -self.children[0].evaluate(st)
     
 class BinOp(Node):
     def __init__(self, value: int | str, left: Node, right: Node):
         super().__init__(value, [left, right])
 
-    def evaluate(self):
+    def evaluate(self, st: SymbolTable):
         if(self.value == 'PLUS'):
-            return self.children[0].evaluate() + self.children[1].evaluate()
+            return self.children[0].evaluate(st) + self.children[1].evaluate(st)
         elif(self.value == 'MINUS'):
-            return self.children[0].evaluate() - self.children[1].evaluate()
+            return self.children[0].evaluate(st) - self.children[1].evaluate(st)
         elif(self.value == 'MULT'):
-            return self.children[0].evaluate() * self.children[1].evaluate()  
+            return self.children[0].evaluate(st) * self.children[1].evaluate(st)  
         elif(self.value == 'DIV'):
-            return self.children[0].evaluate() // self.children[1].evaluate()
+            return self.children[0].evaluate(st) // self.children[1].evaluate(st)
+        
+class Identifier(Node):
+    def __init__(self, value: int | str):
+        super().__init__(value, [])
+
+    def evaluate(self, st: SymbolTable):
+        return st.getTableValue(self.value)
+    
+class Print(Node):
+    def __init__(self, value: int | str, child: Node):
+        super().__init__(value, [child])
+
+    def evaluate(self, st: SymbolTable):
+        print(self.children[0].evaluate(st))
+        pass
+
+class Assignment(Node):
+    def __init__(self, var_name: str, var_value: Node):
+        super().__init__(var_name, [var_value])
+
+    def evaluate(self, st: SymbolTable):
+        st.setTableValue(self.value, self.children[0].evaluate(st))
+        pass
+
+class Block(Node):
+    def __init__(self, value: int | str, children = list):
+        super().__init__(value, children)
+
+    def evaluate(self, st):
+        for child in self.children:
+            child.evaluate(st)
+        pass
+
+class NoOp(Node):
+    def __init__(self):
+        super().__init__('', [])
+
+    def evaluate(self, st):
+        pass
 
 class Token:
     def __init__(self, kind: str, value: int | str):
@@ -50,14 +113,14 @@ class Lexer:
     def __init__(self, source: str):
         self.source = source
         self.position = 0
-        self.next = -1
+        self.next = Token('START', '')
 
     def selectNext(self):
         if(self.position == len(self.source)):
             self.next = Token('EOF', '')
             return
         char = self.source[self.position]
-        while char == ' ' and self.position < len(self.source):
+        while (char == ' ' or char == '\n') and self.position < len(self.source):
             self.position += 1
             if(self.position < len(self.source)):
                 char = self.source[self.position]
@@ -74,22 +137,46 @@ class Lexer:
                 else:
                     char = self.source[self.position]
             self.next = Token('INT', int(number))
-        else:
-            if(char == '+'):
-                self.next = Token('PLUS', '+')
-            elif(char == '-'):
-                self.next = Token('MINUS', '-')
-            elif(char == '*'):
-                self.next = Token('MULT', '*')
-            elif(char == '/'):
-                self.next = Token('DIV', '/')
-            elif(char == '('):
-                self.next = Token('OPEN_PAR', '(')
-            elif(char == ')'):
-                self.next = Token('CLOSE_PAR', ')')
-            else:
-                raise Exception(f"Invalid character found at position {self.position}.")
+        elif(char == '+'):
+            self.next = Token('PLUS', '+')
             self.position += 1
+        elif(char == '-'):
+            self.next = Token('MINUS', '-')
+            self.position += 1
+        elif(char == '*'):
+            self.next = Token('MULT', '*')
+            self.position += 1
+        elif(char == '/'):
+            self.next = Token('DIV', '/')
+            self.position += 1
+        elif(char == '('):
+            self.next = Token('OPEN_PAR', '(')
+            self.position += 1
+        elif(char == ')'):
+            self.next = Token('CLOSE_PAR', ')')
+            self.position += 1
+        elif(char == '='):
+            self.next = Token('ASSIGN', '=')
+            self.position += 1
+        elif(char == ';'):
+            self.next = Token('END', ';')
+            self.position += 1
+        elif(re.match(r'[a-zA-Z]', char)):
+            variable_name = ""
+            while(re.match(r'[a-zA-Z0-9_]', char)):
+                variable_name += char
+                self.position += 1
+                if(self.position == len(self.source)):
+                    break
+                else:
+                    char = self.source[self.position]
+            if(variable_name == "log"):
+                self.next = Token('PRINT', variable_name)
+            else:
+                self.next = Token('IDEN', variable_name)
+        else:
+            print(char)
+            raise Exception(f"Invalid character found at position {self.position}.")
 
 class Parser:
     def __init__(self):
@@ -98,6 +185,10 @@ class Parser:
     def parseFactor(self):
         if self.lex.next.kind == "INT":
             node = IntVal(self.lex.next.value)
+            self.lex.selectNext()
+            return node
+        elif self.lex.next.kind == "IDEN":
+            node = Identifier(self.lex.next.value)
             self.lex.selectNext()
             return node
         elif self.lex.next.kind in ("PLUS", "MINUS"):
@@ -133,20 +224,80 @@ class Parser:
             right = self.parseTerm()
             node = BinOp(operation, node, right)
         return node
+    
+    def parseStatement(self):
+        if(self.lex.next.kind == 'IDEN'):
+            var_name = self.lex.next.value
+            self.lex.selectNext()
+
+            if(self.lex.next.kind != 'ASSIGN'):
+                raise Exception('Syntax error: Expected assignment.')
+            self.lex.selectNext()
+
+            var_value = self.parseExpression()
+            if(self.lex.next.kind != 'END'):
+                raise Exception('Syntax error: Expected ; token at the end of statement.')
+            self.lex.selectNext()
+
+            node = Assignment(var_name, var_value)
+        
+        elif(self.lex.next.kind == 'PRINT'):
+            self.lex.selectNext()
+            if(self.lex.next.kind != 'OPEN_PAR'):
+                raise Exception('Syntax error: Expected OPEN_PAR token.')
+            self.lex.selectNext()
+
+            value = self.parseExpression()
+
+            # print(self.lex.next.kind)
+
+            if(self.lex.next.kind != 'CLOSE_PAR'):
+                raise Exception('Syntax error: Expected CLOSE_PAR token.')
+            self.lex.selectNext()
+            
+            if(self.lex.next.kind != 'END'):
+                raise Exception('Syntax error: Expected ; token at the end of statement.')
+            self.lex.selectNext()
+
+            node = Print('print', value)
+
+        elif(self.lex.next.kind == 'END'):
+            node = NoOp()
+            self.lex.selectNext()
+
+        else:
+            raise Exception('Syntax error: Invalid statement.')
+
+        return node
+
+    
+    def parseProgram(self):
+        statements = []
+        while(self.lex.next.kind != 'EOF'):
+            ast = self.parseStatement()
+            statements.append(ast)
+        node = Block('main', statements)
+        return node
 
     def run(self, code: str):
-        self.lex = Lexer(code)
+        prepro = Prepro()
+        filtered_code = prepro.filter(code)
+        self.lex = Lexer(filtered_code)
         self.lex.selectNext()
         if self.lex.next.kind == "EOF":
-            raise Exception("Syntax Error: empty expression")
-        root = self.parseExpression()
+            raise Exception("Syntax Error: Empty expression")
+        ast = self.parseProgram()
         if self.lex.next.kind != "EOF":
-            raise Exception("Syntax Error: unexpected token after expression")
-        print(root.evaluate())
+            raise Exception("Syntax Error: Unexpected token after expression")
+        return ast
 
 if __name__ == '__main__':
     parser = Parser()
     if(len(sys.argv) == 1):
         raise Exception('Syntax Error: Empty expression.')
     else:
-        parser.run(sys.argv[1])
+        with open(sys.argv[1], "r") as file:
+            code = file.read()
+        ast = parser.run(code)
+        st = SymbolTable()
+        ast.evaluate(st)
