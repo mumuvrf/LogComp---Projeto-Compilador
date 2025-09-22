@@ -346,10 +346,27 @@ class Parser:
             self.lex.selectNext()
 
         else:
-            raise Exception('Syntax error: Invalid statement.')
+            node = self.parseBlock()
 
         return node
 
+    def parseBlock(self):
+        statements = []
+
+        if(self.lex.next.kind != 'OPEN_BRA'):
+            raise Exception("Syntax Error: Invalid statement.")
+        self.lex.selectNext()
+
+        while(self.lex.next.kind != 'CLOSE_BRA' and self.lex.next.kind != 'EOF'):
+            ast = self.parseStatement()
+            statements.append(ast)
+
+        if(self.lex.next.kind != 'CLOSE_BRA'):
+            raise Exception("Syntax Error: Expected '}' at the end of Block.")
+        self.lex.selectNext()
+
+        node = Block('block', statements)
+        return node
     
     def parseProgram(self):
         statements = []
