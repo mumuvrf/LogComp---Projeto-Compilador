@@ -50,6 +50,8 @@ class UnOp(Node):
             return self.children[0].evaluate(st)
         elif(self.value == 'MINUS'):
             return -self.children[0].evaluate(st)
+        elif(self.value == 'NOT'):
+            return not(self.children[0].evaluate(st))
     
 class BinOp(Node):
     def __init__(self, value: int | str, left: Node, right: Node):
@@ -106,6 +108,13 @@ class Block(Node):
         for child in self.children:
             child.evaluate(st)
         pass
+
+class Read(Node):
+    def __init__(self):
+        super().__init__("READ", [])
+    
+    def evaluate(self, st):
+        return int(input())
 
 class NoOp(Node):
     def __init__(self):
@@ -254,17 +263,25 @@ class Parser:
             node = Identifier(self.lex.next.value)
             self.lex.selectNext()
             return node
-        elif self.lex.next.kind in ("PLUS", "MINUS"):
+        elif self.lex.next.kind in ("PLUS", "MINUS", "NOT"):
             operation = self.lex.next.kind
             self.lex.selectNext()
             return UnOp(operation, self.parseFactor())
         elif self.lex.next.kind == "OPEN_PAR":
             self.lex.selectNext()
-            node = self.parseExpression()
+            node = self.parseBoolExpr()
             if self.lex.next.kind != "CLOSE_PAR":
-                raise Exception("Syntax Error: ')' expected")
+                raise Exception("Syntax Error: Expected ')' after expression.")
             self.lex.selectNext()
             return node
+        elif self.lex.next.kind == "READ":
+            self.lex.selectNext()
+            if self.lex.next.kind != "OPEN_PAR":
+                raise Exception("Syntax Error: Expected '(' after READ token.")
+            self.lex.selectNext()
+            if self.lex.next.kind != "CLOSE_PAR":
+                raise Exception("Syntax Error: Expected ')' after expression.")
+            return Read()
         else:
             raise Exception("Syntax Error: invalid factor")
 
