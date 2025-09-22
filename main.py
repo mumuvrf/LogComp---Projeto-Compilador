@@ -64,6 +64,16 @@ class BinOp(Node):
             return self.children[0].evaluate(st) * self.children[1].evaluate(st)  
         elif(self.value == 'DIV'):
             return self.children[0].evaluate(st) // self.children[1].evaluate(st)
+        elif(self.value == 'GREATER'):
+            return self.children[0].evaluate(st) > self.children[1].evaluate(st)
+        elif(self.value == 'LESS'):
+            return self.children[0].evaluate(st) < self.children[1].evaluate(st)
+        elif(self.value == 'EQUAL'):
+            return self.children[0].evaluate(st) == self.children[1].evaluate(st)
+        elif(self.value == 'AND'):
+            return self.children[0].evaluate(st) and self.children[1].evaluate(st)
+        elif(self.value == 'OR'):
+            return self.children[0].evaluate(st) or self.children[1].evaluate(st)
         
 class Identifier(Node):
     def __init__(self, value: int | str):
@@ -139,7 +149,7 @@ class Lexer:
                 else:
                     char = self.source[self.position]
             self.next = Token('INT', int(number))
-        elif(char in '+-*/(){}=;!'):
+        elif(char in '+-*/(){};!><'):
             sign_label = {
                 '+': 'PLUS',
                 '-': 'MINUS',
@@ -149,12 +159,20 @@ class Lexer:
                 ')': 'CLOSE_PAR',
                 '{': 'OPEN_BRA',
                 '}': 'CLOSE_BRA',
-                '=': 'ASSIGN',
                 ';': 'END',
-                '!': 'NOT'
+                '!': 'NOT',
+                '>': 'GREATER',
+                '<': 'LESS'
             }
             self.next = Token(sign_label[char], char)
             self.position += 1
+        elif(char == '='):
+            self.position += 1
+            if(self.source[self.position] == '='):
+                self.next = Token('EQUAL', '==')
+                self.position += 1
+            else:
+                self.next = Token('ASSIGN', '=')
         elif(char == '&'):
             self.position += 1
             char = self.source[self.position]
@@ -199,6 +217,33 @@ class Lexer:
 class Parser:
     def __init__(self):
         self.lex: Lexer
+
+    def parseRelExpr(self):
+        node = self.parseExpression()
+        while self.lex.next.kind in ("GREATER", "LESS", "EQUAL"):
+            operation = self.lex.next.kind
+            self.lex.selectNext()
+            right = self.parseExpression()
+            node = BinOp(operation, node, right)
+        return node
+    
+    def parseBoolTerm(self):
+        node = self.parseRelExpr()
+        while self.lex.next.kind == "AND":
+            operation = self.lex.next.kind
+            self.lex.selectNext()
+            right = self.parseRelExpr()
+            node = BinOp(operation, node, right)
+        return node
+    
+    def parseBoolExpr(self):
+        node = self.parseBoolTerm()
+        while self.lex.next.kind == "OR":
+            operation = self.lex.next.kind
+            self.lex.selectNext()
+            right = self.parseBoolTerm()
+            node = BinOp(operation, node, right)
+        return node
 
     def parseFactor(self):
         if self.lex.next.kind == "INT":
