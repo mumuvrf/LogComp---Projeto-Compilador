@@ -119,6 +119,7 @@ class Lexer:
         if(self.position == len(self.source)):
             self.next = Token('EOF', '')
             return
+        
         char = self.source[self.position]
         while (char == ' ' or char == '\n') and self.position < len(self.source):
             self.position += 1
@@ -127,6 +128,7 @@ class Lexer:
             else:
                 self.next = Token('EOF', '')
                 return
+            
         if(char.isdigit()):
             number = ""
             while(char.isdigit()):
@@ -137,43 +139,59 @@ class Lexer:
                 else:
                     char = self.source[self.position]
             self.next = Token('INT', int(number))
-        elif(char == '+'):
-            self.next = Token('PLUS', '+')
+        elif(char in '+-*/(){}=;!'):
+            sign_label = {
+                '+': 'PLUS',
+                '-': 'MINUS',
+                '*': 'MULT',
+                '/': 'DIV',
+                '(': 'OPEN_PAR',
+                ')': 'CLOSE_PAR',
+                '{': 'OPEN_BRA',
+                '}': 'CLOSE_BRA',
+                '=': 'ASSIGN',
+                ';': 'END',
+                '!': 'NOT'
+            }
+            self.next = Token(sign_label[char], char)
             self.position += 1
-        elif(char == '-'):
-            self.next = Token('MINUS', '-')
+        elif(char == '&'):
             self.position += 1
-        elif(char == '*'):
-            self.next = Token('MULT', '*')
+            char = self.source[self.position]
+            if(char != '&'):
+                raise Exception(f"Lexical Error: Expected '&' at position {self.position}.")
+            else:
+                self.next = Token('AND', '&&')
+                self.position += 1
+        elif(char == '|'):
             self.position += 1
-        elif(char == '/'):
-            self.next = Token('DIV', '/')
-            self.position += 1
-        elif(char == '('):
-            self.next = Token('OPEN_PAR', '(')
-            self.position += 1
-        elif(char == ')'):
-            self.next = Token('CLOSE_PAR', ')')
-            self.position += 1
-        elif(char == '='):
-            self.next = Token('ASSIGN', '=')
-            self.position += 1
-        elif(char == ';'):
-            self.next = Token('END', ';')
-            self.position += 1
+            char = self.source[self.position]
+            if(char != '|'):
+                raise Exception(f"Lexical Error: Expected '|' at position {self.position}.")
+            else:
+                self.next = Token('OR', '||')
+                self.position += 1
         elif(re.match(r'[a-zA-Z]', char)):
-            variable_name = ""
+            word = ""
             while(re.match(r'[a-zA-Z0-9_]', char)):
-                variable_name += char
+                word += char
                 self.position += 1
                 if(self.position == len(self.source)):
                     break
                 else:
                     char = self.source[self.position]
-            if(variable_name == "log"):
-                self.next = Token('PRINT', variable_name)
+            if(word == "log"):
+                self.next = Token('PRINT', word)
+            elif(word == 'if'):
+                self.next = Token('IF', word)
+            elif(word == 'else'):
+                self.next = Token('ELSE', word)
+            elif(word == 'while'):
+                self.next = Token('WHILE', word)
+            elif(word == 'readline'):
+                self.next = Token('READ', word)
             else:
-                self.next = Token('IDEN', variable_name)
+                self.next = Token('IDEN', word)
         else:
             print(char)
             raise Exception(f"Invalid character found at position {self.position}.")
