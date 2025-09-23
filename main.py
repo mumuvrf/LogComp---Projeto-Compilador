@@ -115,6 +115,24 @@ class Read(Node):
     
     def evaluate(self, st):
         return int(input())
+    
+class If(Node):
+    def __init__(self, condition, expected, alternative):
+        super().__init__('IF', [condition, expected, alternative])
+
+    def evaluate(self, st):
+        if(self.children[0].evaluate(st)):
+            self.children[1].evaluate(st)
+        else:
+            self.children[2].evaluate(st)
+
+class While(Node):
+    def __init__(self, condition, execution):
+        super().__init__('IF', [condition, execution])
+
+    def evaluate(self, st):
+        while(self.children[0].evaluate(st)):
+            self.children[1].evaluate(st)
 
 class NoOp(Node):
     def __init__(self):
@@ -220,7 +238,6 @@ class Lexer:
             else:
                 self.next = Token('IDEN', word)
         else:
-            print(char)
             raise Exception(f"Invalid character found at position {self.position}.")
 
 class Parser:
@@ -278,9 +295,12 @@ class Parser:
             self.lex.selectNext()
             if self.lex.next.kind != "OPEN_PAR":
                 raise Exception("Syntax Error: Expected '(' after READ token.")
+            
             self.lex.selectNext()
             if self.lex.next.kind != "CLOSE_PAR":
                 raise Exception("Syntax Error: Expected ')' after expression.")
+            
+            self.lex.selectNext()
             return Read()
         else:
             raise Exception("Syntax Error: invalid factor")
@@ -314,7 +334,7 @@ class Parser:
                 raise Exception('Syntax error: Expected assignment.')
             self.lex.selectNext()
 
-            var_value = self.parseExpression()
+            var_value = self.parseBoolExpr()
             if(self.lex.next.kind != 'END'):
                 raise Exception('Syntax error: Expected ; token at the end of statement.')
             self.lex.selectNext()
@@ -327,7 +347,7 @@ class Parser:
                 raise Exception('Syntax error: Expected OPEN_PAR token.')
             self.lex.selectNext()
 
-            value = self.parseExpression()
+            value = self.parseBoolExpr()
 
             # print(self.lex.next.kind)
 
@@ -340,6 +360,42 @@ class Parser:
             self.lex.selectNext()
 
             node = Print('print', value)
+
+        elif(self.lex.next.kind == 'IF'):
+            self.lex.selectNext()
+            if(self.lex.next.kind != 'OPEN_PAR'):
+                raise Exception('Syntax error: Expected OPEN_PAR token on IF statement.')
+            
+            self.lex.selectNext()
+            condition = self.parseBoolExpr()
+
+            if(self.lex.next.kind != 'CLOSE_PAR'):
+                raise Exception('Syntax error: Expected CLOSE_PAR token.')
+            
+            self.lex.selectNext()
+            expected = self.parseStatement()
+
+            alternative = NoOp()
+            if(self.lex.next.kind == 'ELSE'):
+                self.lex.selectNext()
+                alternative = self.parseStatement()
+            node = If(condition, expected, alternative)
+
+        elif(self.lex.next.kind == 'WHILE'):
+            self.lex.selectNext()
+            if(self.lex.next.kind != 'OPEN_PAR'):
+                raise Exception('Syntax error: Expected OPEN_PAR token on WHILE statement.')
+            
+            self.lex.selectNext()
+            condition = self.parseBoolExpr()
+
+            if(self.lex.next.kind != 'CLOSE_PAR'):
+                raise Exception('Syntax error: Expected CLOSE_PAR token.')
+            
+            self.lex.selectNext()
+            execution = self.parseStatement()
+
+            node = While(condition, execution)
 
         elif(self.lex.next.kind == 'END'):
             node = NoOp()
