@@ -10,3 +10,13 @@ z__ = x + y_1;
 log(x);
 log(z__+1);
 ;;; // Teste do filter
+if(1 == 2 || 1 == 1){
+    log(1);
+} else{
+    log(0);
+}
+k = readline();
+while(k < 2){
+    k = k +1;
+    log(k);
+}
