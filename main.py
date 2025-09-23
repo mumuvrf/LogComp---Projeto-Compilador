@@ -198,6 +198,8 @@ class Lexer:
             if(self.source[self.position] == '='):
                 self.next = Token('EQUAL', '==')
                 self.position += 1
+                if(self.source[self.position] == '='):
+                    self.position += 1
             else:
                 self.next = Token('ASSIGN', '=')
         elif(char == '&'):
