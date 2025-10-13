@@ -109,15 +109,22 @@ class BinOp(Node):
 
         op = self.value
 
-        # Arithmetic: only numbers (except PLUS may concatenate strings)
+        # helper para conversão consistente a string (booleanos -> 'true'/'false')
+        def var_to_str(v):
+            if v.type == 'boolean':
+                return 'true' if v.value else 'false'
+            return str(v.value)
+
+        # Se qualquer operando for string, fazemos concatenação (string + anything)
         if op == 'PLUS':
-            # number + number
             if left_var.type == 'number' and right_var.type == 'number':
                 return Variable('number', left_var.value + right_var.value)
-            # string + string -> concat
-            if left_var.type == 'string' and right_var.type == 'string':
-                return Variable('string', left_var.value + right_var.value)
-            raise Exception('Type error: PLUS requires both operands to be numbers or both strings.')
+            if left_var.type == 'string' or right_var.type == 'string':
+                left_s = left_var.value if left_var.type == 'string' else var_to_str(left_var)
+                right_s = right_var.value if right_var.type == 'string' else var_to_str(right_var)
+                return Variable('string', left_s + right_s)
+            raise Exception('Type error: PLUS requires both operands to be numbers or at least one string for concatenation.')
+
         elif op == 'MINUS':
             if left_var.type == 'number' and right_var.type == 'number':
                 return Variable('number', left_var.value - right_var.value)
@@ -130,19 +137,29 @@ class BinOp(Node):
             if left_var.type == 'number' and right_var.type == 'number':
                 return Variable('number', left_var.value // right_var.value)
             raise Exception('Type error: DIV requires number operands.')
+
         elif op == 'GREATER':
+            # números ou strings (lexicográfico)
             if left_var.type == 'number' and right_var.type == 'number':
                 return Variable('boolean', left_var.value > right_var.value)
-            raise Exception('Type error: GREATER requires number operands.')
+            if left_var.type == 'string' and right_var.type == 'string':
+                return Variable('boolean', left_var.value > right_var.value)
+            raise Exception('Type error: GREATER requires both operands to be numbers or both strings.')
+
         elif op == 'LESS':
+            # números ou strings (lexicográfico)
             if left_var.type == 'number' and right_var.type == 'number':
                 return Variable('boolean', left_var.value < right_var.value)
-            raise Exception('Type error: LESS requires number operands.')
+            if left_var.type == 'string' and right_var.type == 'string':
+                return Variable('boolean', left_var.value < right_var.value)
+            raise Exception('Type error: LESS requires both operands to be numbers or both strings.')
+
         elif op == 'EQUAL':
             # allow equality between same types
             if left_var.type != right_var.type:
                 raise Exception('Type error: EQUAL requires both operands to have same type.')
             return Variable('boolean', left_var.value == right_var.value)
+
         elif op == 'AND':
             if left_var.type == 'boolean' and right_var.type == 'boolean':
                 return Variable('boolean', left_var.value and right_var.value)
@@ -153,6 +170,7 @@ class BinOp(Node):
             raise Exception('Type error: OR requires boolean operands.')
         else:
             raise Exception(f'Runtime error: Unknown binary operator {op}.')
+
         
 class Identifier(Node):
     def __init__(self, value: int | str):
@@ -167,8 +185,11 @@ class Print(Node):
 
     def evaluate(self, st: SymbolTable):
         var = self.children[0].evaluate(st)
-        # imprime o valor interno
-        print(var.value)
+        if var.type == 'boolean':
+            print('true' if var.value else 'false')
+        else:
+            # número e string já têm representação adequada
+            print(var.value)
 
 class Assignment(Node):
     def __init__(self, var_name: str, var_value: Node):
@@ -281,7 +302,7 @@ class Lexer:
                 else:
                     char = self.source[self.position]
             self.next = Token('INT', int(number))
-        elif(char in '+-*/(){};!><'):
+        elif(char in '+-*/(){};!><:'):
             sign_label = {
                 '+': 'PLUS',
                 '-': 'MINUS',
@@ -294,7 +315,8 @@ class Lexer:
                 ';': 'END',
                 '!': 'NOT',
                 '>': 'GREATER',
-                '<': 'LESS'
+                '<': 'LESS',
+                ':': 'COLON'
             }
             self.next = Token(sign_label[char], char)
             self.position += 1
@@ -530,17 +552,37 @@ class Parser:
             self.lex.selectNext()
 
         elif self.lex.next.kind == 'VAR':
-            # parse variable declaration: let <TYPE> <IDEN> ( = expr )? ;
-            self.lex.selectNext()
-            if self.lex.next.kind != 'TYPE':
-                raise Exception('Syntax error: Expected type after let.')
-            type_token = self.lex.next.value
+            # aceita:
+            #   let <TYPE> <IDEN> ( = expr )? ;
+            # ou
+            #   let <IDEN> : <TYPE> ( = expr )? ;
             self.lex.selectNext()
 
-            if self.lex.next.kind != 'IDEN':
-                raise Exception('Syntax error: Expected identifier after type in variable declaration.')
-            ident = Identifier(self.lex.next.value)
-            self.lex.selectNext()
+            # caso 1: let <TYPE> ...
+            if self.lex.next.kind == 'TYPE':
+                type_token = self.lex.next.value
+                self.lex.selectNext()
+
+                if self.lex.next.kind != 'IDEN':
+                    raise Exception('Syntax error: Expected identifier after type in variable declaration.')
+                ident = Identifier(self.lex.next.value)
+                self.lex.selectNext()
+
+            # caso 2: let <IDEN> : <TYPE> ...
+            elif self.lex.next.kind == 'IDEN':
+                ident = Identifier(self.lex.next.value)
+                self.lex.selectNext()
+
+                if self.lex.next.kind != 'COLON':
+                    raise Exception("Syntax error: Expected ':' after identifier in variable declaration.")
+                self.lex.selectNext()
+
+                if self.lex.next.kind != 'TYPE':
+                    raise Exception("Syntax error: Expected type after ':' in variable declaration.")
+                type_token = self.lex.next.value
+                self.lex.selectNext()
+            else:
+                raise Exception('Syntax error: Expected type or identifier after let.')
 
             initializer = None
             if self.lex.next.kind == 'ASSIGN':
