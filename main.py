@@ -13,16 +13,38 @@ class SymbolTable:
 
     def getTableValue(self, name: str):
         if name in self.table.keys():
-            return self.table[name].value
+            return self.table[name]  # retorna o objeto Variable
         else:
             raise Exception('Syntax error: Invalid variable name.')
     
-    def setTableValue(self, name: str, value: int):
-        self.table[name] = Variable(value)
-        pass
+    def setTableValue(self, name: str, var):  # var é um objeto Variable
+        if name not in self.table.keys():
+            raise Exception('Semantic error: Variable not declared.')
+        declared = self.table[name]
+        # checar compatibilidade de tipo
+        if declared.type != var.type:
+            raise Exception('Type error: Cannot assign value of type {} to variable of type {}.'.format(var.type, declared.type))
+        declared.value = var.value
+
+    def createVariable(self, name: str, type_: str, value=None):
+        # Define valor padrão dependendo do tipo, se value for None
+        if value is None:
+            if type_ == 'number':
+                value = 0
+            elif type_ == 'boolean':
+                value = False
+            elif type_ == 'string':
+                value = ""
+            else:
+                raise Exception(f"Semantic error: Unknown type '{type_}'.")
+        # cria e insere a variável (se já existir, sobrescreve? vamos considerar declaração duplicada como erro)
+        if name in self.table:
+            raise Exception('Semantic error: Variable already declared.')
+        self.table[name] = Variable(type_, value)
 
 class Variable:
-    def __init__(self, value: int):
+    def __init__(self, type: str, value):
+        self.type = type
         self.value = value
 
 class Node(ABC):
@@ -39,43 +61,98 @@ class IntVal(Node):
         super().__init__(value, [])
 
     def evaluate(self, st: SymbolTable):
-        return self.value
+        return Variable('number', self.value)
+    
+class BoolVal(Node):
+    def __init__(self, value: bool):
+        super().__init__(value, [])
+
+    def evaluate(self, st: SymbolTable):
+        return Variable('boolean', self.value)
+
+class StringVal(Node):
+    def __init__(self, value: str):
+        super().__init__(value, [])
+
+    def evaluate(self, st: SymbolTable):
+        return Variable('string', self.value)
     
 class UnOp(Node):
     def __init__(self, value: int | str, child: Node):
         super().__init__(value, [child])
 
     def evaluate(self, st: SymbolTable):
-        if(self.value == 'PLUS'):
-            return self.children[0].evaluate(st)
-        elif(self.value == 'MINUS'):
-            return -self.children[0].evaluate(st)
-        elif(self.value == 'NOT'):
-            return not(self.children[0].evaluate(st))
+        child_var = self.children[0].evaluate(st)
+        if self.value == 'PLUS':
+            # unary plus: only for numbers
+            if child_var.type != 'number':
+                raise Exception('Type error: Unary + requires number.')
+            return Variable('number', +child_var.value)
+        elif self.value == 'MINUS':
+            if child_var.type != 'number':
+                raise Exception('Type error: Unary - requires number.')
+            return Variable('number', -child_var.value)
+        elif self.value == 'NOT':
+            if child_var.type != 'boolean':
+                raise Exception('Type error: Unary ! requires boolean.')
+            return Variable('boolean', not child_var.value)
+        else:
+            raise Exception(f'Runtime error: Unknown unary operator {self.value}.')
     
 class BinOp(Node):
     def __init__(self, value: int | str, left: Node, right: Node):
         super().__init__(value, [left, right])
 
     def evaluate(self, st: SymbolTable):
-        if(self.value == 'PLUS'):
-            return self.children[0].evaluate(st) + self.children[1].evaluate(st)
-        elif(self.value == 'MINUS'):
-            return self.children[0].evaluate(st) - self.children[1].evaluate(st)
-        elif(self.value == 'MULT'):
-            return self.children[0].evaluate(st) * self.children[1].evaluate(st)  
-        elif(self.value == 'DIV'):
-            return self.children[0].evaluate(st) // self.children[1].evaluate(st)
-        elif(self.value == 'GREATER'):
-            return self.children[0].evaluate(st) > self.children[1].evaluate(st)
-        elif(self.value == 'LESS'):
-            return self.children[0].evaluate(st) < self.children[1].evaluate(st)
-        elif(self.value == 'EQUAL'):
-            return self.children[0].evaluate(st) == self.children[1].evaluate(st)
-        elif(self.value == 'AND'):
-            return self.children[0].evaluate(st) and self.children[1].evaluate(st)
-        elif(self.value == 'OR'):
-            return self.children[0].evaluate(st) or self.children[1].evaluate(st)
+        left_var = self.children[0].evaluate(st)
+        right_var = self.children[1].evaluate(st)
+
+        op = self.value
+
+        # Arithmetic: only numbers (except PLUS may concatenate strings)
+        if op == 'PLUS':
+            # number + number
+            if left_var.type == 'number' and right_var.type == 'number':
+                return Variable('number', left_var.value + right_var.value)
+            # string + string -> concat
+            if left_var.type == 'string' and right_var.type == 'string':
+                return Variable('string', left_var.value + right_var.value)
+            raise Exception('Type error: PLUS requires both operands to be numbers or both strings.')
+        elif op == 'MINUS':
+            if left_var.type == 'number' and right_var.type == 'number':
+                return Variable('number', left_var.value - right_var.value)
+            raise Exception('Type error: MINUS requires number operands.')
+        elif op == 'MULT':
+            if left_var.type == 'number' and right_var.type == 'number':
+                return Variable('number', left_var.value * right_var.value)
+            raise Exception('Type error: MULT requires number operands.')
+        elif op == 'DIV':
+            if left_var.type == 'number' and right_var.type == 'number':
+                return Variable('number', left_var.value // right_var.value)
+            raise Exception('Type error: DIV requires number operands.')
+        elif op == 'GREATER':
+            if left_var.type == 'number' and right_var.type == 'number':
+                return Variable('boolean', left_var.value > right_var.value)
+            raise Exception('Type error: GREATER requires number operands.')
+        elif op == 'LESS':
+            if left_var.type == 'number' and right_var.type == 'number':
+                return Variable('boolean', left_var.value < right_var.value)
+            raise Exception('Type error: LESS requires number operands.')
+        elif op == 'EQUAL':
+            # allow equality between same types
+            if left_var.type != right_var.type:
+                raise Exception('Type error: EQUAL requires both operands to have same type.')
+            return Variable('boolean', left_var.value == right_var.value)
+        elif op == 'AND':
+            if left_var.type == 'boolean' and right_var.type == 'boolean':
+                return Variable('boolean', left_var.value and right_var.value)
+            raise Exception('Type error: AND requires boolean operands.')
+        elif op == 'OR':
+            if left_var.type == 'boolean' and right_var.type == 'boolean':
+                return Variable('boolean', left_var.value or right_var.value)
+            raise Exception('Type error: OR requires boolean operands.')
+        else:
+            raise Exception(f'Runtime error: Unknown binary operator {op}.')
         
 class Identifier(Node):
     def __init__(self, value: int | str):
@@ -89,16 +166,17 @@ class Print(Node):
         super().__init__(value, [child])
 
     def evaluate(self, st: SymbolTable):
-        print(self.children[0].evaluate(st))
-        pass
+        var = self.children[0].evaluate(st)
+        # imprime o valor interno
+        print(var.value)
 
 class Assignment(Node):
     def __init__(self, var_name: str, var_value: Node):
         super().__init__(var_name, [var_value])
 
     def evaluate(self, st: SymbolTable):
-        st.setTableValue(self.value, self.children[0].evaluate(st))
-        pass
+        var = self.children[0].evaluate(st)
+        st.setTableValue(self.value, var)
 
 class Block(Node):
     def __init__(self, value: int | str, children = list):
@@ -107,31 +185,37 @@ class Block(Node):
     def evaluate(self, st):
         for child in self.children:
             child.evaluate(st)
-        pass
 
 class Read(Node):
     def __init__(self):
         super().__init__("READ", [])
     
     def evaluate(self, st):
-        return int(input())
+        v = int(input())
+        return Variable('number', v)
     
 class If(Node):
     def __init__(self, condition, expected, alternative):
         super().__init__('IF', [condition, expected, alternative])
 
     def evaluate(self, st):
-        if(self.children[0].evaluate(st)):
+        cond_var = self.children[0].evaluate(st)
+        if cond_var.type != 'boolean':
+            raise Exception('Type error: IF condition must be boolean.')
+        if(cond_var.value):
             self.children[1].evaluate(st)
         else:
             self.children[2].evaluate(st)
 
 class While(Node):
     def __init__(self, condition, execution):
-        super().__init__('IF', [condition, execution])
+        super().__init__('WHILE', [condition, execution])
 
     def evaluate(self, st):
-        while(self.children[0].evaluate(st)):
+        cond_var = self.children[0].evaluate(st)
+        if cond_var.type != 'boolean':
+            raise Exception('Type error: WHILE condition must be boolean.')
+        while(self.children[0].evaluate(st).value):
             self.children[1].evaluate(st)
 
 class NoOp(Node):
@@ -140,6 +224,27 @@ class NoOp(Node):
 
     def evaluate(self, st):
         pass
+
+class VarDec(Node):
+    # value: tipo (string 'number'/'boolean'/'string')
+    # children: Identifier, (optional) expression
+    def __init__(self, type_, identifier: Identifier, initializer: Node | None = None):
+        kids = [identifier]
+        if initializer is not None:
+            kids.append(initializer)
+        super().__init__(type_, kids)
+
+    def evaluate(self, st: SymbolTable):
+        ident: Identifier = self.children[0]
+        name = ident.value
+        if len(self.children) == 2:
+            init_var = self.children[1].evaluate(st)
+            # verificar compatibilidade de tipos
+            if init_var.type != self.value:
+                raise Exception('Type error: Cannot initialize variable of type {} with value of type {}.'.format(self.value, init_var.type))
+            st.createVariable(name, self.value, init_var.value)
+        else:
+            st.createVariable(name, self.value, None)
 
 class Token:
     def __init__(self, kind: str, value: int | str):
@@ -195,38 +300,46 @@ class Lexer:
             self.position += 1
         elif(char == '='):
             self.position += 1
-            if(self.source[self.position] == '='):
+            if self.position < len(self.source) and self.source[self.position] == '=':
                 self.next = Token('EQUAL', '==')
                 self.position += 1
-                if(self.source[self.position] == '='):
+                if self.position < len(self.source) and self.source[self.position] == '=':
                     self.position += 1
             else:
                 self.next = Token('ASSIGN', '=')
         elif(char == '&'):
             self.position += 1
-            char = self.source[self.position]
-            if(char != '&'):
+            if self.position >= len(self.source) or self.source[self.position] != '&':
                 raise Exception(f"Lexical Error: Expected '&' at position {self.position}.")
             else:
                 self.next = Token('AND', '&&')
                 self.position += 1
         elif(char == '|'):
             self.position += 1
-            char = self.source[self.position]
-            if(char != '|'):
+            if self.position >= len(self.source) or self.source[self.position] != '|':
                 raise Exception(f"Lexical Error: Expected '|' at position {self.position}.")
             else:
                 self.next = Token('OR', '||')
                 self.position += 1
+        elif(char == '"'):
+            # capturar conteúdo entre aspas (não inclui as aspas)
+            word = ""
+            self.position += 1  # pular abertura
+            while self.position < len(self.source) and self.source[self.position] != '"':
+                word += self.source[self.position]
+                self.position += 1
+            if self.position == len(self.source):
+                self.next = Token('EOF', '')
+                return
+            else:
+                # agora self.source[self.position] é a aspas de fechamento
+                self.next = Token('STR', word)
+                self.position += 1  # pular fechamento
         elif(re.match(r'[a-zA-Z]', char)):
             word = ""
-            while(re.match(r'[a-zA-Z0-9_]', char)):
-                word += char
+            while(self.position < len(self.source) and re.match(r'[a-zA-Z0-9_]', self.source[self.position])):
+                word += self.source[self.position]
                 self.position += 1
-                if(self.position == len(self.source)):
-                    break
-                else:
-                    char = self.source[self.position]
             if(word == "log"):
                 self.next = Token('PRINT', word)
             elif(word == 'if'):
@@ -237,6 +350,12 @@ class Lexer:
                 self.next = Token('WHILE', word)
             elif(word == 'readline'):
                 self.next = Token('READ', word)
+            elif(word == 'let'):
+                self.next = Token('VAR', word)
+            elif(word == 'true' or word == 'false'):
+                self.next = Token('BOOL', word)
+            elif(word in ['string', 'number', 'boolean']):
+                self.next = Token('TYPE', word)
             else:
                 self.next = Token('IDEN', word)
         else:
@@ -276,6 +395,15 @@ class Parser:
     def parseFactor(self):
         if self.lex.next.kind == "INT":
             node = IntVal(self.lex.next.value)
+            self.lex.selectNext()
+            return node
+        elif self.lex.next.kind == "STR":
+            node = StringVal(self.lex.next.value)
+            self.lex.selectNext()
+            return node
+        elif self.lex.next.kind == "BOOL":
+            val = True if self.lex.next.value == 'true' else False
+            node = BoolVal(val)
             self.lex.selectNext()
             return node
         elif self.lex.next.kind == "IDEN":
@@ -351,8 +479,6 @@ class Parser:
 
             value = self.parseBoolExpr()
 
-            # print(self.lex.next.kind)
-
             if(self.lex.next.kind != 'CLOSE_PAR'):
                 raise Exception('Syntax error: Expected CLOSE_PAR token.')
             self.lex.selectNext()
@@ -402,6 +528,30 @@ class Parser:
         elif(self.lex.next.kind == 'END'):
             node = NoOp()
             self.lex.selectNext()
+
+        elif self.lex.next.kind == 'VAR':
+            # parse variable declaration: let <TYPE> <IDEN> ( = expr )? ;
+            self.lex.selectNext()
+            if self.lex.next.kind != 'TYPE':
+                raise Exception('Syntax error: Expected type after let.')
+            type_token = self.lex.next.value
+            self.lex.selectNext()
+
+            if self.lex.next.kind != 'IDEN':
+                raise Exception('Syntax error: Expected identifier after type in variable declaration.')
+            ident = Identifier(self.lex.next.value)
+            self.lex.selectNext()
+
+            initializer = None
+            if self.lex.next.kind == 'ASSIGN':
+                self.lex.selectNext()
+                initializer = self.parseBoolExpr()
+
+            if self.lex.next.kind != 'END':
+                raise Exception('Syntax error: Expected ; token at the end of variable declaration.')
+            self.lex.selectNext()
+
+            node = VarDec(type_token, ident, initializer)
 
         else:
             node = self.parseBlock()
