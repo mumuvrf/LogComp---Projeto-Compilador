@@ -1,20 +1,23 @@
 import sys
 import re
 from abc import ABC, abstractmethod
+import os
 
 class Prepro:
     def filter(self, code):
         filtered_code = re.sub(r"//.*", "", code)
         return filtered_code
-    
+
 class Variable:
-    def __init__(self, value: int | bool | str, type: str):
+    def __init__(self, value: int | bool | str, type: str, shift: int = 0):
         self.value = value
         self.type = type
+        self.shift = shift  # deslocamento relativo a EBP (em bytes)
 
 class SymbolTable:
     def __init__(self):
         self.table = {}
+        self._var_count = 0  # conta variáveis para definir shift
 
     def getTableValue(self, name: str):
         if name in self.table.keys():
@@ -25,7 +28,9 @@ class SymbolTable:
     def setTableValue(self, name: str, var: Variable):
         if(name in self.table.keys()):
             if(self.table[name].type != var.type):
-                raise Exception(f'Semantic error: Cannot assign value of type {self.table[name].type} to variable of type {var.type}')
+                raise Exception(f'Semantic error: Cannot assign value of type {var.type} to variable of type {self.table[name].type}')
+            # Preserve shift assigned when declared:
+            var.shift = self.table[name].shift
             self.table[name] = var
         else:
             raise Exception('Semantic error: Variable not declared.')
@@ -47,17 +52,79 @@ class SymbolTable:
                 raise Exception(f"Semantic error: Unknown type '{type_}'.")
         if name in self.table:
             raise Exception('Semantic error: Variable already declared.')
-        self.table[name] = Variable(value, type_)
+        # cada variável ocupa 4 bytes; primeira variável tem shift=4 (EBP-4), segunda 8, ...
+        self._var_count += 1
+        shift = 4 * self._var_count
+        self.table[name] = Variable(value, type_, shift)
         return
 
+    def total_stack_bytes(self):
+        return 4 * self._var_count
+
 class Node(ABC):
+    id = 0  # id estático
+
+    @staticmethod
+    def newId():
+        Node.id += 1
+        return Node.id
+
     def __init__(self, value: int | str, children):
         self.value = value
         self.children = children
+        self.id = Node.newId()  # identificador único do nó
 
     @abstractmethod
     def evaluate(self, st: SymbolTable):
         pass
+
+    # cada nó deve implementar generate(st) para gerar assembly em Code
+    @abstractmethod
+    def generate(self, st: SymbolTable):
+        pass
+
+class Code:
+    instructions = []
+
+    @staticmethod
+    def append(code: str) -> None:
+        Code.instructions.append(code)
+
+    @staticmethod
+    def dump(filename: str, st: SymbolTable) -> None:
+        # escreve header + data + text + instrucoes + footer
+        total_vars_bytes = st.total_stack_bytes()
+        header = [
+            "section .data",
+            "  format_out: db \"%d\", 10, 0 ; format do printf",
+            "  format_in: db \"%d\", 0 ; format do scanf",
+            "  scan_int: dd 0; 32-bits integer",
+            "",
+            "section .text",
+            "  extern _printf ; usar _printf para Windows",
+            "  extern _scanf ; usar _scanf para Windows",
+            "  extern _ExitProcess@4 ; usar para Windows",
+            "  global _start ; início do programa",
+            "",
+            "_start:",
+            "  push ebp ; guarda o EBP",
+            "  mov ebp, esp ; zera a pilha"
+        ]
+        if total_vars_bytes > 0:
+            header.append(f"  sub esp, {total_vars_bytes} ; reserva espaço para variáveis ({total_vars_bytes} bytes)")
+
+        footer = [
+            "",
+            "  ; fim do código gerado",
+            "  mov esp, ebp ; reestabelece a pilha",
+            "  pop ebp",
+            "  push dword 0",
+            "  call _ExitProcess@4"
+        ]
+
+        asm_text = "\n".join(header + [""] + Code.instructions + [""] + footer)
+        with open(filename, 'w') as file:
+            file.write(asm_text)
 
 class IntVal(Node):
     def __init__(self, value: int):
@@ -65,28 +132,47 @@ class IntVal(Node):
 
     def evaluate(self, st: SymbolTable):
         return Variable(self.value, 'number')
-    
+
+    def generate(self, st: SymbolTable):
+        Code.append(f"  ; IntVal {self.value}")
+        Code.append(f"  mov eax, {self.value}  ; carregar constante")
+
 class BoolVal(Node):
     def __init__(self, value: bool):
         super().__init__(value, [])
 
     def evaluate(self, st: SymbolTable):
         return Variable(self.value, 'boolean')
-    
+
+    def generate(self, st: SymbolTable):
+        val = 1 if self.value else 0
+        Code.append(f"  ; BoolVal {self.value}")
+        Code.append(f"  mov eax, {val}")
+
 class StringVal(Node):
     def __init__(self, value: str):
         super().__init__(value, [])
 
     def evaluate(self, st: SymbolTable):
         return Variable(self.value, 'string')
-    
+
+    def generate(self, st: SymbolTable):
+        # Roteiro: não gerar código para nós que representam ou operam strings
+        Code.append(f"  ; String literal ignored in code generation: \"{self.value}\"")
+        Code.append(f"  mov eax, 0")
+
 class Identifier(Node):
     def __init__(self, value: int | str):
         super().__init__(value, [])
 
     def evaluate(self, st: SymbolTable):
         return st.getTableValue(self.value)
-    
+
+    def generate(self, st: SymbolTable):
+        var = st.getTableValue(self.value)
+        Code.append(f"  ; Identifier {self.value}")
+        Code.append(f"  mov eax, [ebp-{var.shift}]  ; carregar variável {self.value}")
+
 class VarDec(Node):
     def __init__(
             self, 
@@ -107,7 +193,18 @@ class VarDec(Node):
             if expr_value.type != self.value:
                 raise Exception(f'Type error: Cannot initialize variable of type {self.value} with value of type {expr_value.type}.')
             st.createVariable(variable.value, self.value, expr_value.value)
-    
+
+    def generate(self, st: SymbolTable):
+        # A alocação de espaço é feita no prologue (Code.dump) com base em st.total_stack_bytes()
+        ident: Identifier = self.children[0]
+        initializer = self.children[1]
+        Code.append(f"  ; VarDec {ident.value} : {self.value}")
+        if initializer is not None:
+            # gera valor da expressão em EAX e salva no deslocamento associado
+            initializer.generate(st)
+            var = st.getTableValue(ident.value)
+            Code.append(f"  mov [ebp-{var.shift}], eax  ; inicializar {ident.value}")
+
 class UnOp(Node):
     def __init__(self, value: int | str, child: Node):
         super().__init__(value, [child])
@@ -126,7 +223,22 @@ class UnOp(Node):
             if child.type != 'boolean':
                 raise Exception('Type error: Unary ! requires boolean.')
             return Variable(not(child.value), 'boolean')
-    
+
+    def generate(self, st: SymbolTable):
+        op = self.value
+        Code.append(f"  ; UnOp {op}")
+        self.children[0].generate(st)  # resultado em EAX
+        if op == 'MINUS':
+            Code.append(f"  neg eax")
+        elif op == 'PLUS':
+            pass  # já está em EAX
+        elif op == 'NOT':
+            # boolean: EAX != 0 => true(1), zero => false(0)
+            Code.append("  cmp eax, 0")
+            Code.append("  mov eax, 0")
+            Code.append(f"  sete al")
+            Code.append("  movzx eax, al")
+
 class BinOp(Node):
     def __init__(self, value: int | str, left: Node, right: Node):
         super().__init__(value, [left, right])
@@ -166,7 +278,6 @@ class BinOp(Node):
             raise Exception('Type error: DIV requires number operands.')
         
         elif operation == 'GREATER':
-            # números ou strings (lexicográfico)
             if left.type == 'number' and right.type == 'number':
                 return Variable(left.value > right.value, 'boolean')
             if left.type == 'string' and right.type == 'string':
@@ -194,7 +305,70 @@ class BinOp(Node):
             if left.type == 'boolean' and right.type == 'boolean':
                 return Variable(left.value or right.value, 'boolean')
             raise Exception('Type error: OR requires boolean operands.')
-    
+
+    def generate(self, st: SymbolTable):
+        op = self.value
+        Code.append(f"  ; BinOp {op}")
+        # estratégia: gerar left -> eax; push eax; gerar right -> eax; pop ecx (left)
+        self.children[0].generate(st)
+        Code.append("  push eax  ; salvar left")
+        self.children[1].generate(st)
+        Code.append("  pop ecx   ; ecx = left, eax = right")
+        # agora ecx = left, eax = right
+        if op == 'PLUS':
+            Code.append("  add eax, ecx  ; eax = right + left  (note: operands swapped)")
+            # corrigir ordem: we did right in eax, left in ecx -> do eax = ecx + eax
+            Code.append("  mov edx, eax")
+            Code.append("  mov eax, ecx")
+            Code.append("  add eax, edx")
+        elif op == 'MINUS':
+            # left - right => ecx - eax -> compute in eax
+            Code.append("  mov edx, eax")
+            Code.append("  mov eax, ecx")
+            Code.append("  sub eax, edx")
+        elif op == 'MULT':
+            # imul eax, ecx  => eax = eax * ecx , but ensure ordering: left in ecx, right in eax
+            Code.append("  mov edx, eax")
+            Code.append("  mov eax, ecx")
+            Code.append("  imul eax, edx")
+        elif op == 'DIV':
+            # left / right: dividend in eax, divisor in edx -> we need dividend=ecx, divisor=eax
+            Code.append("  mov ebx, eax    ; divisor = right")
+            Code.append("  mov eax, ecx    ; dividend = left")
+            Code.append("  cdq")
+            Code.append("  idiv ebx        ; eax = eax / ebx")
+        elif op in ('GREATER', 'LESS', 'EQUAL'):
+            # compare [left] ecx with [right] eax
+            Code.append("  cmp ecx, eax")
+            if op == 'GREATER':
+                Code.append("  mov eax, 0")
+                Code.append("  mov ecx, 1")
+                Code.append("  cmovg eax, ecx")
+            elif op == 'LESS':
+                Code.append("  mov eax, 0")
+                Code.append("  mov ecx, 1")
+                Code.append("  cmovl eax, ecx")
+            else:  # EQUAL
+                Code.append("  mov eax, 0")
+                Code.append("  mov ecx, 1")
+                Code.append("  sete al")
+                Code.append("  movzx eax, al")
+        elif op == 'AND':
+            # boolean: ecx (left) and eax (right) => result in eax
+            Code.append("  and eax, ecx")
+            Code.append("  cmp eax, 0")
+            Code.append("  mov eax, 0")
+            Code.append("  sete al")
+            Code.append("  movzx eax, al")
+        elif op == 'OR':
+            Code.append("  or eax, ecx")
+            Code.append("  cmp eax, 0")
+            Code.append("  mov eax, 0")
+            Code.append("  sete al")
+            Code.append("  movzx eax, al")
+        else:
+            Code.append(f"  ; operação {op} não suportada no gerador")
+
 class Print(Node):
     def __init__(self, value: int | str, child: Node):
         super().__init__(value, [child])
@@ -206,6 +380,14 @@ class Print(Node):
         else:
             print(var.value)
 
+    def generate(self, st: SymbolTable):
+        Code.append("  ; Print")
+        self.children[0].generate(st)  # resultado em EAX
+        Code.append("  push eax")
+        Code.append("  push format_out")
+        Code.append("  call _printf")
+        Code.append("  add esp, 8")
+
 class Assignment(Node):
     def __init__(self, var_name: str, var_value: Node):
         super().__init__(var_name, [var_value])
@@ -214,28 +396,48 @@ class Assignment(Node):
         st.setTableValue(self.value, self.children[0].evaluate(st))
         pass
 
+    def generate(self, st: SymbolTable):
+        Code.append(f"  ; Assignment {self.value}")
+        self.children[0].generate(st)  # resultado em EAX
+        var = st.getTableValue(self.value)
+        Code.append(f"  mov [ebp-{var.shift}], eax  ; {self.value} = EAX")
+
 class Block(Node):
     def __init__(self, value: int | str, children = list):
         super().__init__(value, children)
 
-    def evaluate(self, st):
+    def evaluate(self, st: SymbolTable):
         for child in self.children:
             child.evaluate(st)
         pass
+
+    def generate(self, st: SymbolTable):
+        Code.append(f"  ; Block {self.value} start")
+        for child in self.children:
+            child.generate(st)
+        Code.append(f"  ; Block {self.value} end")
 
 class Read(Node):
     def __init__(self):
         super().__init__("READ", [])
     
-    def evaluate(self, st):
+    def evaluate(self, st: SymbolTable):
         value = int(input())
         return Variable(value, 'number')
     
+    def generate(self, st: SymbolTable):
+        Code.append("  ; Read (scanf)")
+        Code.append("  push scan_int")
+        Code.append("  push format_in")
+        Code.append("  call _scanf")
+        Code.append("  add esp, 8")
+        Code.append("  mov eax, [scan_int]  ; valor lido em eax")
+
 class If(Node):
     def __init__(self, condition, expected, alternative):
         super().__init__('IF', [condition, expected, alternative])
 
-    def evaluate(self, st):
+    def evaluate(self, st: SymbolTable):
         if self.children[0].evaluate(st).type != 'boolean':
             raise Exception('Type error: IF condition must be boolean.')
         
@@ -244,22 +446,82 @@ class If(Node):
         else:
             self.children[2].evaluate(st)
 
+    def generate(self, st: SymbolTable):
+        myid = self.id
+        Code.append(f"  ; IF start (id={myid})")
+        # gerar condição -> eax
+        self.children[0].generate(st)
+        Code.append("  cmp eax, 0")
+        Code.append(f"  je else_{myid}")
+        # then
+        self.children[1].generate(st)
+        Code.append(f"  jmp exit_{myid}")
+        # else
+        Code.append(f"else_{myid}:")
+        self.children[2].generate(st)
+        Code.append(f"exit_{myid}:")
+
 class While(Node):
     def __init__(self, condition, execution):
         super().__init__('IF', [condition, execution])
 
-    def evaluate(self, st):
+    def evaluate(self, st: SymbolTable):
         if self.children[0].evaluate(st).type != 'boolean':
             raise Exception('Type error: WHILE condition must be boolean.')
         while(self.children[0].evaluate(st).value):
             self.children[1].evaluate(st)
 
+    def generate(self, st: SymbolTable):
+        myid = self.id
+        Code.append(f"  ; WHILE start (id={myid})")
+        Code.append(f"loop_{myid}:")
+        self.children[0].generate(st)  # cond -> eax
+        Code.append("  cmp eax, 0")
+        Code.append(f"  je exit_{myid}")
+        self.children[1].generate(st)
+        Code.append(f"  jmp loop_{myid}")
+        Code.append(f"exit_{myid}:")
+
 class NoOp(Node):
     def __init__(self):
         super().__init__('', [])
 
-    def evaluate(self, st):
+    def evaluate(self, st: SymbolTable):
         pass
+
+    def generate(self, st: SymbolTable):
+        Code.append("  ; NoOp")
+
+# -------------------------
+# Função adicionada — mínima
+# -------------------------
+def register_declarations(node, st: SymbolTable):
+    """
+    Percorre a AST recursivamente e registra todas as VarDec (declarações)
+    na SymbolTable, para que os shifts estejam disponíveis para a geração.
+    Não avalia inicializadores — só reserva espaço.
+    """
+    if node is None:
+        return
+
+    # Se for VarDec, registra a variável (somente o nome e o tipo)
+    if isinstance(node, VarDec):
+        ident_node = node.children[0]  # Identifier
+        type_name = node.value         # tipo armazenado no VarDec.value
+        # createVariable levanta erro se já existir — manter esse comportamento
+        st.createVariable(ident_node.value, type_name)
+        # NÃO avaliamos o inicializador aqui (se houver), apenas reservamos shift
+
+    # Percorre filhos (se houver) recursivamente
+    if hasattr(node, 'children') and node.children:
+        # children pode ser lista ou outro nó
+        for child in node.children:
+            if child is not None:
+                register_declarations(child, st)
+
+# -------------------------
+# Continuação do código...
+# -------------------------
 
 class Token:
     def __init__(self, kind: str, value: int | str):
@@ -373,7 +635,7 @@ class Lexer:
                 self.next = Token('READ', word)
             elif(word == 'let'):
                 self.next = Token('VAR', word)
-            elif(word in ['true', 'false']):
+            elif(word in ['true', 'false']): 
                 self.next = Token('BOOL', word)
             elif(word in ['string', 'number', 'boolean']):
                 self.next = Token('TYPE', word)
@@ -632,4 +894,13 @@ if __name__ == '__main__':
             code = file.read()
         ast = parser.run(code)
         st = SymbolTable()
-        ast.evaluate(st)
+        # não executa evaluate; gera assembly
+        # ---> registra declarações primeiro (para que shifts existam)
+        register_declarations(ast, st)
+        ast.generate(st)
+        # escreve arquivo asm com mesmo prefixo do arquivo de entrada
+        inpath = sys.argv[1]
+        prefix, _ = os.path.splitext(inpath)
+        outname = prefix + ".asm"
+        Code.dump(outname, st)
+        print(f"Assembly gerado em: {outname}")
