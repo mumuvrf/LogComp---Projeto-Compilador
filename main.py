@@ -310,29 +310,34 @@ class BinOp(Node):
     def generate(self, st: SymbolTable):
         op = self.value
         Code.append(f"  ; BinOp {op}")
-        # estratégia: gerar left -> eax; push eax; gerar right -> eax; recuperar left em ebx (mais robusto)
-        self.children[0].generate(st)
-        Code.append("  push eax  ; salvar left")
+        # nova estratégia robusta:
+        # gerar RIGHT -> resultado em EAX; push EAX (right)
+        # gerar LEFT  -> resultado em EAX (left)
+        # pop EBX     -> EBX = right
+        # agora EAX = left, EBX = right -> aplicar operação
+
+        # gerar right primeiro
         self.children[1].generate(st)
-        # invés de 'pop ebx' usamos mov [esp] + add esp,4 para evitar pops fora de ordem
-        Code.append("  mov ebx, [esp]   ; ebx = left (ler sem depender de pop gerado por subexpressões)")
-        Code.append("  add esp, 4       ; remover left da pilha")
-        # agora ebx = left, eax = right
+        Code.append("  push eax  ; salvar right")
+
+        # gerar left depois
+        self.children[0].generate(st)
+
+        # recuperar right em ebx
+        Code.append("  pop ebx   ; ebx = right")
+
+        # agora eax = left, ebx = right
         if op == 'PLUS':
             Code.append("  add eax, ebx")
         elif op == 'MINUS':
-            Code.append("  mov edx, eax")
-            Code.append("  mov eax, ebx")
-            Code.append("  sub eax, edx")
+            Code.append("  sub eax, ebx")
         elif op == 'MULT':
             Code.append("  imul eax, ebx")
         elif op == 'DIV':
-            Code.append("  mov ecx, eax    ; ecx = divisor (right)")
-            Code.append("  mov eax, ebx    ; eax = dividend (left)")
             Code.append("  cdq")
-            Code.append("  idiv ecx")
+            Code.append("  idiv ebx")
         elif op in ('GREATER', 'LESS', 'EQUAL'):
-            Code.append("  cmp ebx, eax")
+            Code.append("  cmp eax, ebx")
             Code.append("  mov eax, 0")
             if op == 'GREATER':
                 Code.append("  setg al")
@@ -355,6 +360,7 @@ class BinOp(Node):
             Code.append("  movzx eax, al")
         else:
             Code.append(f"  ; operação {op} não suportada no gerador")
+
 
 class Print(Node):
     def __init__(self, value: int | str, child: Node):
