@@ -317,8 +317,7 @@ class BinOp(Node):
         Code.append("  pop ecx   ; ecx = left, eax = right")
         # agora ecx = left, eax = right
         if op == 'PLUS':
-            Code.append("  add eax, ecx  ; eax = right + left  (note: operands swapped)")
-            # corrigir ordem: we did right in eax, left in ecx -> do eax = ecx + eax
+            # CORREÇÃO: remover add redundante que dobrava/ corrompia o resultado
             Code.append("  mov edx, eax")
             Code.append("  mov eax, ecx")
             Code.append("  add eax, edx")
