@@ -307,67 +307,59 @@ class BinOp(Node):
                 return Variable(left.value or right.value, 'boolean')
             raise Exception('Type error: OR requires boolean operands.')
 
-    def generate(self, st: SymbolTable):
-        op = self.value
-        Code.append(f"  ; BinOp {op}")
-        # estratégia: gerar left -> eax; push eax; gerar right -> eax; pop ecx (left)
-        self.children[0].generate(st)
-        Code.append("  push eax  ; salvar left")
-        self.children[1].generate(st)
-        Code.append("  pop ecx   ; ecx = left, eax = right")
-        # agora ecx = left, eax = right
-        if op == 'PLUS':
-            # CORREÇÃO: remover add redundante que dobrava/ corrompia o resultado
-            Code.append("  mov edx, eax")
-            Code.append("  mov eax, ecx")
-            Code.append("  add eax, edx")
-        elif op == 'MINUS':
-            # left - right => ecx - eax -> compute in eax
-            Code.append("  mov edx, eax")
-            Code.append("  mov eax, ecx")
-            Code.append("  sub eax, edx")
-        elif op == 'MULT':
-            # imul eax, ecx  => eax = eax * ecx , but ensure ordering: left in ecx, right in eax
-            Code.append("  mov edx, eax")
-            Code.append("  mov eax, ecx")
-            Code.append("  imul eax, edx")
-        elif op == 'DIV':
-            # left / right: dividend in eax, divisor in edx -> we need dividend=ecx, divisor=eax
-            Code.append("  mov ebx, eax    ; divisor = right")
-            Code.append("  mov eax, ecx    ; dividend = left")
-            Code.append("  cdq")
-            Code.append("  idiv ebx        ; eax = eax / ebx")
-        elif op in ('GREATER', 'LESS', 'EQUAL'):
-            # compare [left] ecx with [right] eax
-            Code.append("  cmp ecx, eax")
-            if op == 'GREATER':
+        def generate(self, st: SymbolTable):
+            op = self.value
+            Code.append(f"  ; BinOp {op}")
+            # gerar left -> eax; salvar na pilha; gerar right -> eax; recuperar left em ebx
+            self.children[0].generate(st)      # left -> eax
+            Code.append("  push eax           ; salvar left")
+            self.children[1].generate(st)      # right -> eax
+            Code.append("  pop ebx            ; ebx = left, eax = right")
+            # agora ebx = left, eax = right
+
+            if op == 'PLUS':
+                # eax = left + right  -> add eax, ebx (commutativa: eax(right) + ebx(left))
+                Code.append("  add eax, ebx")
+            elif op == 'MINUS':
+                # left - right => ebx - eax -> mov edx,eax; mov eax,ebx; sub eax,edx
+                Code.append("  mov edx, eax")
+                Code.append("  mov eax, ebx")
+                Code.append("  sub eax, edx")
+            elif op == 'MULT':
+                # multiply: eax (right) * ebx(left) -> imul eax, ebx gives eax = eax*ebx
+                Code.append("  imul eax, ebx")
+            elif op == 'DIV':
+                # left / right: dividend = ebx, divisor = eax
+                Code.append("  mov ecx, eax    ; ecx = divisor (right)")
+                Code.append("  mov eax, ebx    ; eax = dividend (left)")
+                Code.append("  cdq")
+                Code.append("  idiv ecx")
+            elif op in ('GREATER', 'LESS', 'EQUAL'):
+                # compare left (ebx) with right (eax)
+                Code.append("  cmp ebx, eax")
                 Code.append("  mov eax, 0")
-                Code.append("  mov ecx, 1")
-                Code.append("  cmovg eax, ecx")
-            elif op == 'LESS':
+                if op == 'GREATER':
+                    Code.append("  setg al")
+                elif op == 'LESS':
+                    Code.append("  setl al")
+                else:  # EQUAL
+                    Code.append("  sete al")
+                Code.append("  movzx eax, al")
+            elif op == 'AND':
+                # boolean and: treat non-zero as true
+                Code.append("  and eax, ebx    ; eax = right & left (non-zero means true)")
+                Code.append("  cmp eax, 0")
                 Code.append("  mov eax, 0")
-                Code.append("  mov ecx, 1")
-                Code.append("  cmovl eax, ecx")
-            else:  # EQUAL
-                Code.append("  mov eax, 0")
-                Code.append("  mov ecx, 1")
                 Code.append("  sete al")
                 Code.append("  movzx eax, al")
-        elif op == 'AND':
-            # boolean: ecx (left) and eax (right) => result in eax
-            Code.append("  and eax, ecx")
-            Code.append("  cmp eax, 0")
-            Code.append("  mov eax, 0")
-            Code.append("  sete al")
-            Code.append("  movzx eax, al")
-        elif op == 'OR':
-            Code.append("  or eax, ecx")
-            Code.append("  cmp eax, 0")
-            Code.append("  mov eax, 0")
-            Code.append("  sete al")
-            Code.append("  movzx eax, al")
-        else:
-            Code.append(f"  ; operação {op} não suportada no gerador")
+            elif op == 'OR':
+                Code.append("  or eax, ebx")
+                Code.append("  cmp eax, 0")
+                Code.append("  mov eax, 0")
+                Code.append("  sete al")
+                Code.append("  movzx eax, al")
+            else:
+                Code.append(f"  ; operação {op} não suportada no gerador")
 
 class Print(Node):
     def __init__(self, value: int | str, child: Node):
