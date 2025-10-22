@@ -101,17 +101,18 @@ class Code:
             "  scan_int: dd 0; 32-bits integer",
             "",
             "section .text",
-            "  extern _printf ; usar _printf para Windows",
-            "  extern _scanf ; usar _scanf para Windows",
-            "  extern _ExitProcess@4 ; usar para Windows",
-            "  global _start ; início do programa",
+            "  extern printf",
+            "  extern scanf",
+            "  extern exit",
+            "  global main",
             "",
-            "_start:",
+            "main:",
             "  push ebp ; guarda o EBP",
             "  mov ebp, esp ; zera a pilha"
         ]
         if total_vars_bytes > 0:
             header.append(f"  sub esp, {total_vars_bytes} ; reserva espaço para variáveis ({total_vars_bytes} bytes)")
+
 
         footer = [
             "",
@@ -119,7 +120,7 @@ class Code:
             "  mov esp, ebp ; reestabelece a pilha",
             "  pop ebp",
             "  push dword 0",
-            "  call _ExitProcess@4"
+            "  call exit"
         ]
 
         asm_text = "\n".join(header + [""] + Code.instructions + [""] + footer)
@@ -385,7 +386,7 @@ class Print(Node):
         self.children[0].generate(st)  # resultado em EAX
         Code.append("  push eax")
         Code.append("  push format_out")
-        Code.append("  call _printf")
+        Code.append("  call printf")
         Code.append("  add esp, 8")
 
 class Assignment(Node):
@@ -429,7 +430,7 @@ class Read(Node):
         Code.append("  ; Read (scanf)")
         Code.append("  push scan_int")
         Code.append("  push format_in")
-        Code.append("  call _scanf")
+        Code.append("  call scanf")
         Code.append("  add esp, 8")
         Code.append("  mov eax, [scan_int]  ; valor lido em eax")
 
@@ -903,4 +904,4 @@ if __name__ == '__main__':
         prefix, _ = os.path.splitext(inpath)
         outname = prefix + ".asm"
         Code.dump(outname, st)
-        print(f"Assembly gerado em: {outname}")
+        # print(f"Assembly gerado em: {outname}")
