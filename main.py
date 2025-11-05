@@ -30,23 +30,23 @@ class SymbolTable:
         elif self.parent is not None:
             return self.parent.getTableValue(name)
         else:
-            raise Exception('Syntax error: Invalid variable name.')
+            raise Exception(f"[Semantic] Syntax error: Invalid variable name.")
 
     def setTableValue(self, name: str, var: Variable):
         # procura a tabela onde a variável foi declarada e atualiza lá
         if name in self.table.keys():
             # não permitir atribuir a uma função
             if self.table[name].is_function:
-                raise Exception('Semantic error: Cannot assign to a function name.')
+                raise Exception("[Semantic] Semantic error: Cannot assign to a function name.")
             if(self.table[name].type != var.type):
-                raise Exception(f'Semantic error: Cannot assign value of type {var.type} to variable of type {self.table[name].type}')
+                raise Exception(f"[Semantic] Semantic error: Cannot assign value of type {var.type} to variable of type {self.table[name].type}")
             self.table[name] = var
             return
         elif self.parent is not None:
             self.parent.setTableValue(name, var)
             return
         else:
-            raise Exception('Semantic error: Variable not declared.')
+            raise Exception("[Semantic] Semantic error: Variable not declared.")
 
     def createVariable(
             self,
@@ -64,9 +64,9 @@ class SymbolTable:
             elif type_ == 'void':
                 value = None
             else:
-                raise Exception(f"Semantic error: Unknown type '{type_}'.")
+                raise Exception(f"[Semantic] Semantic error: Unknown type '{type_}'.")
         if name in self.table:
-            raise Exception('Semantic error: Variable already declared.')
+            raise Exception("[Semantic] Semantic error: Variable already declared.")
         self.table[name] = Variable(value, type_)
         return
 
@@ -125,7 +125,7 @@ class VarDec(Node):
         else:
             expr_value = expression.evaluate(st)
             if expr_value.type != self.value:
-                raise Exception(f'Type error: Cannot initialize variable of type {self.value} with value of type {expr_value.type}.')
+                raise Exception(f"[Semantic] Type error: Cannot initialize variable of type {self.value} with value of type {expr_value.type}.")
             st.createVariable(variable.value, self.value, expr_value.value)
 
 class UnOp(Node):
@@ -136,15 +136,15 @@ class UnOp(Node):
         child = self.children[0].evaluate(st)
         if(self.value == 'PLUS'):
             if child.type != 'number':
-                raise Exception('Type error: Unary + requires number.')
+                raise Exception('[Semantic] Type error: Unary + requires number.')
             return Variable(child.value, 'number')
         elif(self.value == 'MINUS'):
             if child.type != 'number':
-                raise Exception('Type error: Unary - requires number.')
+                raise Exception('[Semantic] Type error: Unary - requires number.')
             return Variable(-child.value, 'number')
         elif(self.value == 'NOT'):
             if child.type != 'boolean':
-                raise Exception('Type error: Unary ! requires boolean.')
+                raise Exception('[Semantic] Type error: Unary ! requires boolean.')
             return Variable(not(child.value), 'boolean')
 
 class BinOp(Node):
@@ -168,22 +168,22 @@ class BinOp(Node):
                 left_s = left.value if left.type == 'string' else var_to_str(left)
                 right_s = right.value if right.type == 'string' else var_to_str(right)
                 return Variable(left_s + right_s, 'string')
-            raise Exception('Type error: PLUS requires both operands to be numbers or at least one string for concatenation.')
+            raise Exception('[Semantic] Type error: PLUS requires both operands to be numbers or at least one string for concatenation.')
 
         elif operation == 'MINUS':
             if left.type == 'number' and right.type == 'number':
                 return Variable(left.value - right.value, 'number')
-            raise Exception('Type error: MINUS requires number operands.')
+            raise Exception('[Semantic] Type error: MINUS requires number operands.')
 
         elif operation == 'MULT':
             if left.type == 'number' and right.type == 'number':
                 return Variable(left.value * right.value, 'number')
-            raise Exception('Type error: MULT requires number operands.')
+            raise Exception('[Semantic] Type error: MULT requires number operands.')
 
         elif operation == 'DIV':
             if left.type == 'number' and right.type == 'number':
                 return Variable(left.value // right.value, 'number')
-            raise Exception('Type error: DIV requires number operands.')
+            raise Exception('[Semantic] Type error: DIV requires number operands.')
 
         elif operation == 'GREATER':
             # números ou strings (lexicográfico)
@@ -191,29 +191,29 @@ class BinOp(Node):
                 return Variable(left.value > right.value, 'boolean')
             if left.type == 'string' and right.type == 'string':
                 return Variable(left.value > right.value, 'boolean')
-            raise Exception('Type error: GREATER requires both operands to be numbers or both strings.')
+            raise Exception('[Semantic] Type error: GREATER requires both operands to be numbers or both strings.')
 
         elif operation == 'LESS':
             if left.type == 'number' and right.type == 'number':
                 return Variable(left.value < right.value, 'boolean')
             if left.type == 'string' and right.type == 'string':
                 return Variable(left.value < right.value, 'boolean')
-            raise Exception('Type error: LESS requires both operands to be numbers or both strings.')
+            raise Exception('[Semantic] Type error: LESS requires both operands to be numbers or both strings.')
 
         elif operation == 'EQUAL':
             if left.type != right.type:
-                raise Exception('Type error: EQUAL requires both operands to have same type.')
+                raise Exception('[Semantic] Type error: EQUAL requires both operands to have same type.')
             return Variable(left.value == right.value, 'boolean')
 
         elif operation == 'AND':
             if left.type == 'boolean' and right.type == 'boolean':
                 return Variable(left.value and right.value, 'boolean')
-            raise Exception('Type error: AND requires boolean operands.')
+            raise Exception('[Semantic] Type error: AND requires boolean operands.')
 
         elif operation == 'OR':
             if left.type == 'boolean' and right.type == 'boolean':
                 return Variable(left.value or right.value, 'boolean')
-            raise Exception('Type error: OR requires boolean operands.')
+            raise Exception('[Semantic] Type error: OR requires boolean operands.')
 
 class Print(Node):
     def __init__(self, value: int | str, child: Node):
@@ -267,7 +267,7 @@ class If(Node):
     def evaluate(self, st: SymbolTable):
         cond = self.children[0].evaluate(st)
         if cond.type != 'boolean':
-            raise Exception('Type error: IF condition must be boolean.')
+            raise Exception('[Semantic] Type error: IF condition must be boolean.')
 
         if(cond.value):
             result = self.children[1].evaluate(st)
@@ -285,7 +285,7 @@ class While(Node):
     def evaluate(self, st: SymbolTable):
         cond = self.children[0].evaluate(st)
         if cond.type != 'boolean':
-            raise Exception('Type error: WHILE condition must be boolean.')
+            raise Exception('[Semantic] Type error: WHILE condition must be boolean.')
         while(self.children[0].evaluate(st).value):
             result = self.children[1].evaluate(st)
             if isinstance(result, ReturnValue):
@@ -317,7 +317,7 @@ class FuncDec(Node):
         func_name = self.children[0].value
         # Armazenamos o próprio nó FuncDec como value na Variable, marcando is_function e salvando o env
         if func_name in st.table:
-            raise Exception('Semantic error: Function already declared.')
+            raise Exception('[Semantic] Semantic error: Function already declared.')
         v = Variable(self, self.value, is_function=True, decl_env=st)
         st.table[func_name] = v
         return
@@ -331,16 +331,16 @@ class FuncCall(Node):
         try:
             func_var = st.getTableValue(self.value)
         except Exception:
-            raise Exception('Semantic error: Function not declared.')
+            raise Exception('[Semantic] Semantic error: Function not declared.')
 
         if not func_var.is_function:
-            raise Exception('Semantic error: Identifier is not a function.')
+            raise Exception('[Semantic] Semantic error: Identifier is not a function.')
 
         func_dec: FuncDec = func_var.value
         # parâmetros declarados na função: são children[1:-1] do FuncDec (1..n)
         declared_params = func_dec.children[1:-1]
         if len(declared_params) != len(self.children):
-            raise Exception('Semantic error: Incorrect number of arguments in function call.')
+            raise Exception('[Semantic] Semantic error: Incorrect number of arguments in function call.')
 
         # criar nova SymbolTable encadeada; usar o ambiente onde a função foi declarada como parent
         parent_env = func_var.decl_env if func_var.decl_env is not None else st
@@ -353,7 +353,7 @@ class FuncCall(Node):
             param_type = param_node.value
             arg_value = self.children[i].evaluate(st)
             if arg_value.type != param_type:
-                raise Exception('Semantic error: Argument type mismatch in function call.')
+                raise Exception('[Semantic] Semantic error: Argument type mismatch in function call.')
             # criar variável local do parâmetro
             new_st.createVariable(param_name, param_type, arg_value.value)
 
@@ -364,16 +364,16 @@ class FuncCall(Node):
             # verificar tipo de retorno
             ret_var = result.variable
             if func_dec.value == 'void':
-                raise Exception('Semantic error: Function declared void cannot return a value.')
+                raise Exception('[Semantic] Semantic error: Function declared void cannot return a value.')
             if ret_var.type != func_dec.value:
-                raise Exception('Semantic error: Function return type mismatch.')
+                raise Exception('[Semantic] Semantic error: Function return type mismatch.')
             return ret_var
         else:
             # sem return explícito
             if func_dec.value == 'void':
                 return Variable(None, 'void')
             else:
-                raise Exception('Semantic error: Function did not return a value.')
+                raise Exception('[Semantic] Semantic error: Function did not return a value.')
 
 class Token:
     def __init__(self, kind: str, value: int | str):
@@ -417,8 +417,7 @@ class Lexer:
                 word += self.source[self.position]
                 self.position += 1
             if self.position == len(self.source):
-                self.next = Token('EOF', '')
-                return
+                raise Exception("[Lexer] Lexical Error: Unterminated string literal.")
             else:
                 # agora self.source[self.position] é a aspas de fechamento
                 self.next = Token('STR', word)
@@ -454,20 +453,20 @@ class Lexer:
         elif(char == '&'):
             self.position += 1
             if self.position >= len(self.source):
-                raise Exception(f"Lexical Error: Expected '&' at position {self.position}.")
+                raise Exception("[Lexer] Lexical Error: Expected '&' after '&'.")
             char = self.source[self.position]
             if(char != '&'):
-                raise Exception(f"Lexical Error: Expected '&' at position {self.position}.")
+                raise Exception(f"[Lexer] Lexical Error: Expected '&' at position {self.position}.")
             else:
                 self.next = Token('AND', '&&')
                 self.position += 1
         elif(char == '|'):
             self.position += 1
             if self.position >= len(self.source):
-                raise Exception(f"Lexical Error: Expected '|' at position {self.position}.")
+                raise Exception("[Lexer] Lexical Error: Expected '|' after '|'.")
             char = self.source[self.position]
             if(char != '|'):
-                raise Exception(f"Lexical Error: Expected '|' at position {self.position}.")
+                raise Exception(f"[Lexer] Lexical Error: Expected '|' at position {self.position}.")
             else:
                 self.next = Token('OR', '||')
                 self.position += 1
@@ -503,7 +502,7 @@ class Lexer:
             else:
                 self.next = Token('IDEN', word)
         else:
-            raise Exception(f"Invalid character found at position {self.position}.")
+            raise Exception(f"[Lexer] Invalid character found at position {self.position}.")
 
 class Parser:
     def __init__(self):
@@ -564,7 +563,7 @@ class Parser:
                         self.lex.selectNext()
                         args.append(self.parseBoolExpr())
                 if self.lex.next.kind != 'CLOSE_PAR':
-                    raise Exception("Syntax Error: Expected ')' after function call arguments.")
+                    raise Exception("[Parser] Syntax Error: Expected ')' after function call arguments.")
                 self.lex.selectNext()
                 return FuncCall(name, args)
             else:
@@ -572,30 +571,33 @@ class Parser:
         elif self.lex.next.kind in ("PLUS", "MINUS", "NOT"):
             operation = self.lex.next.kind
             self.lex.selectNext()
+            # após operador unário, deve vir um fator; se não vier, lançamos erro de parser
+            if self.lex.next.kind in ('END', 'CLOSE_PAR', 'CLOSE_BRA', 'EOF'):
+                raise Exception("[Parser] Syntax Error: Missing expression after unary operator.")
             return UnOp(operation, self.parseFactor())
         elif self.lex.next.kind == "OPEN_PAR":
             self.lex.selectNext()
             node = self.parseBoolExpr()
             if self.lex.next.kind != "CLOSE_PAR":
-                raise Exception("Syntax Error: Expected ')' after expression.")
+                raise Exception("[Parser] Syntax Error: Expected ')' after expression.")
             self.lex.selectNext()
             return node
         elif self.lex.next.kind == "READ":
             self.lex.selectNext()
             if self.lex.next.kind != "OPEN_PAR":
-                raise Exception("Syntax Error: Expected '(' after READ token.")
+                raise Exception("[Parser] Syntax Error: Expected '(' after READ token.")
             self.lex.selectNext()
             if self.lex.next.kind != "CLOSE_PAR":
-                raise Exception("Syntax Error: Expected ')' after expression.")
+                raise Exception("[Parser] Syntax Error: Expected ')' after expression.")
             self.lex.selectNext()
             return Read()
         else:
-            raise Exception("Syntax Error: invalid factor")
+            raise Exception("[Parser] Syntax Error: invalid factor")
 
     def parseTerm(self):
         node = self.parseFactor()
         if(self.lex.next.kind == 'INT'):
-            raise Exception('Syntax Error: There must be an operation between two numbers.')
+            raise Exception('[Parser] Syntax Error: There must be an operation between two numbers.')
         while self.lex.next.kind in ("MULT", "DIV"):
             operation = self.lex.next.kind
             self.lex.selectNext()
@@ -608,6 +610,9 @@ class Parser:
         while self.lex.next.kind in ("PLUS", "MINUS"):
             operation = self.lex.next.kind
             self.lex.selectNext()
+            # se após + ou - vier um token ilegal (por exemplo ; ou } ou EOF), devemos reportar erro de parser específico
+            if self.lex.next.kind in ('END', 'CLOSE_PAR', 'CLOSE_BRA', 'EOF'):
+                raise Exception("[Parser] Syntax Error: Missing expression after binary operator.")
             right = self.parseTerm()
             node = BinOp(operation, node, right)
         return node
@@ -620,9 +625,12 @@ class Parser:
 
             if(self.lex.next.kind == 'ASSIGN'):
                 self.lex.selectNext()
+                # se após '=' vier token terminador, erro parser
+                if self.lex.next.kind in ('END', 'CLOSE_BRA', 'CLOSE_PAR', 'EOF'):
+                    raise Exception("[Parser] Syntax Error: Missing expression after assignment operator.")
                 var_value = self.parseBoolExpr()
                 if(self.lex.next.kind != 'END'):
-                    raise Exception('Syntax error: Expected ; token at the end of statement.')
+                    raise Exception('[Parser] Syntax error: Expected ; token at the end of statement.')
                 self.lex.selectNext()
                 node = Assignment(var_name, var_value)
 
@@ -636,30 +644,30 @@ class Parser:
                         self.lex.selectNext()
                         args.append(self.parseBoolExpr())
                 if self.lex.next.kind != 'CLOSE_PAR':
-                    raise Exception('Syntax error: Expected ) after function call.')
+                    raise Exception('[Parser] Syntax error: Expected ) after function call.')
                 self.lex.selectNext()
                 if self.lex.next.kind != 'END':
-                    raise Exception('Syntax error: Expected ; token at the end of statement.')
+                    raise Exception('[Parser] Syntax error: Expected ; token at the end of statement.')
                 self.lex.selectNext()
                 node = FuncCall(var_name, args)
 
             else:
-                raise Exception('Syntax error: Expected assignment or function call.')
+                raise Exception('[Parser] Syntax error: Expected assignment or function call.')
 
         elif(self.lex.next.kind == 'PRINT'):
             self.lex.selectNext()
             if(self.lex.next.kind != 'OPEN_PAR'):
-                raise Exception('Syntax error: Expected OPEN_PAR token.')
+                raise Exception('[Parser] Syntax error: Expected OPEN_PAR token.')
             self.lex.selectNext()
 
             value = self.parseBoolExpr()
 
             if(self.lex.next.kind != 'CLOSE_PAR'):
-                raise Exception('Syntax error: Expected CLOSE_PAR token.')
+                raise Exception('[Parser] Syntax error: Expected CLOSE_PAR token.')
             self.lex.selectNext()
 
             if(self.lex.next.kind != 'END'):
-                raise Exception('Syntax error: Expected ; token at the end of statement.')
+                raise Exception('[Parser] Syntax error: Expected ; token at the end of statement.')
             self.lex.selectNext()
 
             node = Print('print', value)
@@ -667,13 +675,13 @@ class Parser:
         elif(self.lex.next.kind == 'IF'):
             self.lex.selectNext()
             if(self.lex.next.kind != 'OPEN_PAR'):
-                raise Exception('Syntax error: Expected OPEN_PAR token on IF statement.')
+                raise Exception('[Parser] Syntax error: Expected OPEN_PAR token on IF statement.')
 
             self.lex.selectNext()
             condition = self.parseBoolExpr()
 
             if(self.lex.next.kind != 'CLOSE_PAR'):
-                raise Exception('Syntax error: Expected CLOSE_PAR token.')
+                raise Exception('[Parser] Syntax error: Expected CLOSE_PAR token.')
 
             self.lex.selectNext()
             expected = self.parseStatement()
@@ -687,13 +695,13 @@ class Parser:
         elif(self.lex.next.kind == 'WHILE'):
             self.lex.selectNext()
             if(self.lex.next.kind != 'OPEN_PAR'):
-                raise Exception('Syntax error: Expected OPEN_PAR token on WHILE statement.')
+                raise Exception('[Parser] Syntax error: Expected OPEN_PAR token on WHILE statement.')
 
             self.lex.selectNext()
             condition = self.parseBoolExpr()
 
             if(self.lex.next.kind != 'CLOSE_PAR'):
-                raise Exception('Syntax error: Expected CLOSE_PAR token.')
+                raise Exception('[Parser] Syntax error: Expected CLOSE_PAR token.')
 
             self.lex.selectNext()
             execution = self.parseStatement()
@@ -708,23 +716,26 @@ class Parser:
                 self.lex.selectNext()
 
                 if self.lex.next.kind != 'COLON':
-                    raise Exception("Syntax error: Expected ':' after identifier in variable declaration.")
+                    raise Exception("[Parser] Syntax error: Expected ':' after identifier in variable declaration.")
                 self.lex.selectNext()
 
                 if self.lex.next.kind != 'TYPE':
-                    raise Exception("Syntax error: Expected type after ':' in variable declaration.")
+                    raise Exception("[Parser] Syntax error: Expected type after ':' in variable declaration.")
                 type_token = self.lex.next.value
                 self.lex.selectNext()
             else:
-                raise Exception('Syntax error: Expected type or identifier after let.')
+                raise Exception('[Parser] Syntax error: Expected type or identifier after let.')
 
             initializer = None
             if self.lex.next.kind == 'ASSIGN':
                 self.lex.selectNext()
+                # se não houver expressão após '=', reportar parser
+                if self.lex.next.kind in ('END', 'CLOSE_BRA', 'CLOSE_PAR', 'EOF'):
+                    raise Exception("[Parser] Syntax Error: Missing initializer expression in declaration.")
                 initializer = self.parseBoolExpr()
 
             if self.lex.next.kind != 'END':
-                raise Exception('Syntax error: Expected ; token at the end of statement.')
+                raise Exception('[Parser] Syntax error: Expected ; token at the end of statement.')
             self.lex.selectNext()
 
             node = VarDec(type_token, ident, initializer)
@@ -733,7 +744,7 @@ class Parser:
             self.lex.selectNext()
             expr = self.parseBoolExpr()
             if self.lex.next.kind != 'END':
-                raise Exception('Syntax error: Expected ; after return.')
+                raise Exception('[Parser] Syntax error: Expected ; after return.')
             self.lex.selectNext()
             node = Return(expr)
 
@@ -750,7 +761,7 @@ class Parser:
         statements = []
 
         if(self.lex.next.kind != 'OPEN_BRA'):
-            raise Exception("Syntax Error: Invalid statement.")
+            raise Exception("[Parser] Syntax Error: Invalid statement.")
         self.lex.selectNext()
 
         while(self.lex.next.kind != 'CLOSE_BRA' and self.lex.next.kind != 'EOF'):
@@ -758,7 +769,7 @@ class Parser:
             statements.append(ast)
 
         if(self.lex.next.kind != 'CLOSE_BRA'):
-            raise Exception("Syntax Error: Expected '}' at the end of Block.")
+            raise Exception("[Parser] Syntax Error: Expected '}' at the end of Block.")
         self.lex.selectNext()
 
         node = Block('block', statements)
@@ -767,60 +778,60 @@ class Parser:
     def parse_func_declaration(self):
         # já consumiu 'function' no chamador
         if self.lex.next.kind != 'IDEN':
-            raise Exception('Syntax Error: Expected function name after function.')
+            raise Exception('[Parser] Syntax Error: Expected function name after function.')
         name = Identifier(self.lex.next.value)
         self.lex.selectNext()
 
         if self.lex.next.kind != 'OPEN_PAR':
-            raise Exception('Syntax Error: Expected ( after function name.')
+            raise Exception('[Parser] Syntax Error: Expected ( after function name.')
         self.lex.selectNext()
 
         params = []
         if self.lex.next.kind != 'CLOSE_PAR':
             # pelo menos um parâmetro
             if self.lex.next.kind != 'IDEN':
-                raise Exception('Syntax Error: Expected identifier in parameter list.')
+                raise Exception('[Parser] Syntax Error: Expected identifier in parameter list.')
             param_ident = Identifier(self.lex.next.value)
             self.lex.selectNext()
             if self.lex.next.kind != 'COLON':
-                raise Exception("Syntax error: Expected ':' after identifier in parameter.")
+                raise Exception("[Parser] Syntax error: Expected ':' after identifier in parameter.")
             self.lex.selectNext()
             if self.lex.next.kind != 'TYPE':
-                raise Exception("Syntax error: Expected type after ':' in parameter.")
+                raise Exception(" [Parser] Syntax error: Expected type after ':' in parameter.")
             param_type = self.lex.next.value
             self.lex.selectNext()
             params.append(VarDec(param_type, param_ident, None))
             while self.lex.next.kind == 'COMMA':
                 self.lex.selectNext()
                 if self.lex.next.kind != 'IDEN':
-                    raise Exception('Syntax Error: Expected identifier in parameter list.')
+                    raise Exception('[Parser] Syntax Error: Expected identifier in parameter list.')
                 param_ident = Identifier(self.lex.next.value)
                 self.lex.selectNext()
                 if self.lex.next.kind != 'COLON':
-                    raise Exception("Syntax error: Expected ':' after identifier in parameter.")
+                    raise Exception("[Parser] Syntax error: Expected ':' after identifier in parameter.")
                 self.lex.selectNext()
                 if self.lex.next.kind != 'TYPE':
-                    raise Exception("Syntax error: Expected type after ':' in parameter.")
+                    raise Exception(" [Parser] Syntax error: Expected type after ':' in parameter.")
                 param_type = self.lex.next.value
                 self.lex.selectNext()
                 params.append(VarDec(param_type, param_ident, None))
 
         if self.lex.next.kind != 'CLOSE_PAR':
-            raise Exception('Syntax Error: Expected ) after parameter list.')
+            raise Exception('[Parser] Syntax Error: Expected ) after parameter list.')
         self.lex.selectNext()
 
         if self.lex.next.kind != 'COLON':
-            raise Exception('Syntax Error: Expected : return type after function header.')
+            raise Exception('[Parser] Syntax Error: Expected : return type after function header.')
         self.lex.selectNext()
 
         if self.lex.next.kind != 'TYPE':
-            raise Exception('Syntax Error: Expected return TYPE after colon.')
+            raise Exception('[Parser] Syntax Error: Expected return TYPE after colon.')
         return_type = self.lex.next.value
         self.lex.selectNext()
 
         # body
         if self.lex.next.kind != 'OPEN_BRA':
-            raise Exception('Syntax Error: Expected { to start function body.')
+            raise Exception('[Parser] Syntax Error: Expected { to start function body.')
         body = self.parseBlock()
 
         func_node = FuncDec(return_type, name, params, body)
@@ -846,16 +857,16 @@ class Parser:
         self.lex = Lexer(filtered_code)
         self.lex.selectNext()
         if self.lex.next.kind == "EOF":
-            raise Exception("Syntax Error: Empty expression")
+            raise Exception("[Parser] Syntax Error: Empty expression")
         ast = self.parseProgram()
         if self.lex.next.kind != "EOF":
-            raise Exception("Syntax Error: Unexpected token after expression")
+            raise Exception("[Parser] Syntax Error: Unexpected token after expression")
         return ast
 
 if __name__ == '__main__':
     parser = Parser()
     if(len(sys.argv) == 1):
-        raise Exception('Syntax Error: Empty expression.')
+        raise Exception('[Parser] Syntax Error: Empty expression.')
     else:
         with open(sys.argv[1], "r") as file:
             code = file.read()

@@ -1,37 +1,21 @@
-{ // Teste geral
-  x_1 = readline();
-  
-  log(x_1);
-  
-  if ((x_1 > 1 && !!!(x_1 < 1)) || x_1 === 3) {
-    x_1 = 2;
+let b:number = 5; // Variável Global
+
+function soma(x:number, y:number): number {
+  let a:number; // Variável Local
+  a = x + y; 
+  log(a); // Imprime 7
+  return a;
+}
+
+function main(): void {
+  let a:number;
+  {
+    let b:number;
+    a = 3;
+    b = soma(a, 4);
+    log(b); // Imprime 7
   }
-  
-  x = 3+6/3   *  2 -+-  +  2*4/2 + 0/1 -((6+ ((4)))/(2)); // Teste // Teste 2
-  y_1 = 3;
-  y_1 = y_1 + x_1;
-  z__ = x + y_1;
-  
-  if (x_1 === 2) {
-    x_1 = 2;
-  }
-  
-  if (x_1 === 3) {
-    x_1 = 2;
-  } else {
-    x_1 = 3;
-  }
-  
-  x_1 = 0;
-  while (x_1 < 1 || x === 2) {
-    log(x_1);
-    x_1 = x_1 + 1;
-  }
-  
-  
-  ;;; {{ }} // Teste de colchetes
-  // Saida final
-  log(x_1);
-  log(x);
-  log(z__+1);
-} // Teste do filter
+  log(a); // Imprime 3
+  log(b); // Imprime 5
+}
+main();
