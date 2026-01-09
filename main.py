@@ -2,7 +2,6 @@ import sys
 import re
 from abc import ABC, abstractmethod
 
-# [cite: 108-118] Implementation of the Code class to manage Assembly output
 class Code:
     instructions = []
 
@@ -13,7 +12,6 @@ class Code:
     @staticmethod
     def dump(filename: str) -> None:
         with open(filename, 'w') as file:
-            # [cite: 120-132] Writing the header
             file.write("; Constant definitions\n")
             file.write("section .data\n")
             file.write('    format_out: db "%d", 10, 0\n')
@@ -28,10 +26,8 @@ class Code:
             file.write("    push ebp\n")
             file.write("    mov ebp, esp\n\n")
             
-            # Writing generated instructions
             file.write("\n".join(Code.instructions))
             
-            # [cite: 137-142] Writing the footer (Linux exit)
             file.write("\n\n    mov esp, ebp\n")
             file.write("    pop ebp\n")
             file.write("    mov eax, 1\n")
@@ -44,7 +40,6 @@ class Prepro:
         return filtered_code
     
 class Variable:
-    # [cite: 175] Added offset (shift) attribute to store stack position
     def __init__(self, value: int | bool | str, type: str, offset: int = 0):
         self.value = value
         self.type = type
@@ -53,7 +48,7 @@ class Variable:
 class SymbolTable:
     def __init__(self):
         self.table = {}
-        self.offset_counter = 0 # [cite: 96] To track stack displacement
+        self.offset_counter = 0
 
     def getTableValue(self, name: str):
         if name in self.table.keys():
@@ -63,7 +58,6 @@ class SymbolTable:
     
     def setTableValue(self, name: str, var: Variable):
         if(name in self.table.keys()):
-            # Keeps the original offset when updating the value
             original_offset = self.table[name].offset
             if(self.table[name].type != var.type):
                 raise Exception(f'Semantic error: Cannot assign value of type {self.table[name].type} to variable of type {var.type}')
@@ -72,7 +66,6 @@ class SymbolTable:
         else:
             raise Exception('Semantic error: Variable not declared.')
 
-    # [cite: 176] Updated to handle offset calculation
     def createVariable(
             self, 
             name: str, 
@@ -92,19 +85,16 @@ class SymbolTable:
         if name in self.table:
             raise Exception('Semantic error: Variable already declared.')
         
-        # [cite: 99-102] Calculate offset: 4 bytes per variable
         self.offset_counter += 4
         self.table[name] = Variable(value, type_, self.offset_counter)
         return
 
 class Node(ABC):
-    # [cite: 172] Static attribute for unique IDs
     id_counter = 0
 
     def __init__(self, value: int | str, children):
         self.value = value
         self.children = children
-        # [cite: 173] Assign unique ID to the node
         self.id = Node.newId()
 
     @staticmethod
@@ -116,7 +106,6 @@ class Node(ABC):
     def evaluate(self, st: SymbolTable):
         pass
 
-    # [cite: 92, 165] Abstract generate method
     @abstractmethod
     def generate(self, st: SymbolTable):
         pass
@@ -129,7 +118,6 @@ class IntVal(Node):
         return Variable(self.value, 'number')
     
     def generate(self, st: SymbolTable):
-        # [cite: 166] Return value in EAX
         Code.append(f"    mov eax, {self.value}")
 
 class BoolVal(Node):
@@ -151,7 +139,6 @@ class StringVal(Node):
         return Variable(self.value, 'string')
     
     def generate(self, st: SymbolTable):
-        # [cite: 168] No code generation for strings
         pass
 
 class Identifier(Node):
@@ -162,7 +149,6 @@ class Identifier(Node):
         return st.getTableValue(self.value)
     
     def generate(self, st: SymbolTable):
-        # [cite: 177] Retrieve variable from stack [ebp - offset]
         var = st.getTableValue(self.value)
         Code.append(f"    mov eax, [ebp-{var.offset}]")
 
@@ -188,15 +174,14 @@ class VarDec(Node):
             st.createVariable(variable.value, self.value, expr_value.value)
     
     def generate(self, st: SymbolTable):
-        # [cite: 178] Variable declaration
         variable = self.children[0]
         st.createVariable(variable.value, self.value)
-        Code.append("    sub esp, 4") # Reserve space on stack
+        Code.append("    sub esp, 4")
 
         if self.children[1] is not None:
-            self.children[1].generate(st) # Evaluate expression
+            self.children[1].generate(st)
             var = st.getTableValue(variable.value)
-            Code.append(f"    mov [ebp-{var.offset}], eax") # Store initial value
+            Code.append(f"    mov [ebp-{var.offset}], eax")
 
 class UnOp(Node):
     def __init__(self, value: int | str, child: Node):
@@ -218,7 +203,6 @@ class UnOp(Node):
             return Variable(not(child.value), 'boolean')
     
     def generate(self, st: SymbolTable):
-        # [cite: 179] Unary operations
         self.children[0].generate(st)
         if self.value == 'MINUS':
             Code.append("    neg eax")
@@ -226,7 +210,6 @@ class UnOp(Node):
             Code.append("    cmp eax, 0")
             Code.append("    sete al")
             Code.append("    movzx eax, al")
-        # PLUS does nothing to the value in EAX
 
 class BinOp(Node):
     def __init__(self, value: int | str, left: Node, right: Node):
@@ -267,7 +250,6 @@ class BinOp(Node):
             raise Exception('Type error: DIV requires number operands.')
         
         elif operation == 'GREATER':
-            # números ou strings (lexicográfico)
             if left.type == 'number' and right.type == 'number':
                 return Variable(left.value > right.value, 'boolean')
             if left.type == 'string' and right.type == 'string':
@@ -297,15 +279,13 @@ class BinOp(Node):
             raise Exception('Type error: OR requires boolean operands.')
 
     def generate(self, st: SymbolTable):
-        # [cite: 179] Binary operations
-        # [cite: 168] Skip string operations
         
         self.children[0].generate(st) # Left to EAX
         Code.append("    push eax")   # Save Left
         self.children[1].generate(st) # Right to EAX
         Code.append("    pop ecx")    # Recover Left to ECX
         
-        # Now: ECX = Left, EAX = Right
+        # ECX = Left, EAX = Right
         if self.value == 'PLUS':
             Code.append("    add eax, ecx")
         elif self.value == 'MINUS':
@@ -346,7 +326,6 @@ class Print(Node):
             print(var.value)
 
     def generate(self, st: SymbolTable):
-        # [cite: 183] Print operation
         self.children[0].generate(st)
         Code.append("    push eax")
         Code.append("    push format_out")
@@ -362,8 +341,7 @@ class Assignment(Node):
         pass
 
     def generate(self, st: SymbolTable):
-        # [cite: 180] Assignment operation
-        self.children[0].generate(st) # Value to EAX
+        self.children[0].generate(st)
         var = st.getTableValue(self.value)
         Code.append(f"    mov [ebp-{var.offset}], eax")
 
@@ -377,7 +355,6 @@ class Block(Node):
         pass
 
     def generate(self, st: SymbolTable):
-        # [cite: 162] Block of commands
         for child in self.children:
             child.generate(st)
 
@@ -390,7 +367,6 @@ class Read(Node):
         return Variable(value, 'number')
     
     def generate(self, st: SymbolTable):
-        # [cite: 184] Scan operation using logic from example [cite: 32-38]
         Code.append("    push scan_int")
         Code.append("    push format_in")
         Code.append("    call scanf")
@@ -411,16 +387,15 @@ class If(Node):
             self.children[2].evaluate(st)
 
     def generate(self, st: SymbolTable):
-        # [cite: 181] Conditional, utilizing labels and unique ID [cite: 156]
-        self.children[0].generate(st) # Condition
+        self.children[0].generate(st)
         Code.append("    cmp eax, 0")
-        Code.append(f"    je else_{self.id}") # Jump to else if false
+        Code.append(f"    je else_{self.id}")
         
-        self.children[1].generate(st) # True block
+        self.children[1].generate(st)
         Code.append(f"    jmp end_{self.id}")
         
         Code.append(f"else_{self.id}:")
-        self.children[2].generate(st) # Else block
+        self.children[2].generate(st)
         
         Code.append(f"end_{self.id}:")
 
@@ -435,14 +410,13 @@ class While(Node):
             self.children[1].evaluate(st)
 
     def generate(self, st: SymbolTable):
-        # [cite: 182] Loop, utilizing labels and unique ID [cite: 156]
         Code.append(f"loop_{self.id}:")
         
-        self.children[0].generate(st) # Condition
+        self.children[0].generate(st)
         Code.append("    cmp eax, 0")
-        Code.append(f"    je exit_{self.id}") # Exit if false
+        Code.append(f"    je exit_{self.id}")
         
-        self.children[1].generate(st) # Block
+        self.children[1].generate(st)
         Code.append(f"    jmp loop_{self.id}")
         
         Code.append(f"exit_{self.id}:")
@@ -492,9 +466,8 @@ class Lexer:
                     char = self.source[self.position]
             self.next = Token('INT', int(number))
         elif(char == '"'):
-            # capturar conteúdo entre aspas (não inclui as aspas)
             word = ""
-            self.position += 1  # pular abertura
+            self.position += 1
             while self.position < len(self.source) and self.source[self.position] != '"':
                 word += self.source[self.position]
                 self.position += 1
@@ -502,9 +475,8 @@ class Lexer:
                 self.next = Token('EOF', '')
                 return
             else:
-                # agora self.source[self.position] é a aspas de fechamento
                 self.next = Token('STR', word)
-                self.position += 1  # pular fechamento
+                self.position += 1
         elif(char in '+-*/(){};!><:'):
             sign_label = {
                 '+': 'PLUS',
@@ -829,7 +801,6 @@ if __name__ == '__main__':
             code = file.read()
         ast = parser.run(code)
         st = SymbolTable()
-        # [cite: 186] Change execution to code generation and save as .asm
         ast.generate(st)
         output_filename = filename.rsplit('.', 1)[0] + ".asm"
         Code.dump(output_filename)
